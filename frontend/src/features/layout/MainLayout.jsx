@@ -111,9 +111,15 @@ export default function MainLayout() {
                     className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
                 />
                 <div className="flex justify-between items-center mt-2 border-t border-gray-800 pt-2">
-                    <div className="flex gap-1">
-                        <button className="p-2 hover:bg-gray-800 rounded text-gray-400 text-lg transition">📎</button>
-                        <button className="p-2 hover:bg-gray-800 rounded text-gray-400 text-lg transition">✨</button>
+                    <div className="flex gap-2">
+                        <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Attach file">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" >
+                            <path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"></path>
+                        </svg>
+                        </button>
+                        <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Enhance prompt">
+                            ✨
+                        </button>
                     </div>
                     <button className="bg-gray-700 text-white p-2 px-4 rounded hover:bg-gray-600 transition text-xs font-bold">
                         SEND ➤
