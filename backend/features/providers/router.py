@@ -2,6 +2,7 @@
 import json
 import os
 from fastapi import APIRouter
+from features.ollama.service import get_remote_ollama_models
 
 router = APIRouter()
 SETTINGS_FILE = "user_settings.json"
@@ -12,7 +13,6 @@ KNOWN_MODELS = {
     "anthropic": ["claude-3-5-sonnet", "claude-3-opus", "claude-3-haiku"],
     "gemini": ["gemini-1.5-pro", "gemini-2.0-latest", "gemini-2.5-flash", "gemini-1.5-flash"],
     "grok": ["grok-beta"],
-    "runpod": ["llama3-8b-instruct", "mistral-7b"] # Placeholder defaults
 }
 
 @router.get("/active")
@@ -25,16 +25,25 @@ def get_active_providers():
 
     active_list = []
     
-    # Iterate through saved settings
     for provider in data.get("providers", []):
-        # Check if provider is "active" (has keys or url)
+        pid = provider["id"]
+        
+        # Check active status
         has_key = len(provider.get("keys", [])) > 0 and provider["keys"][0] != ""
         has_url = provider.get("url") and provider["url"] != ""
 
         if has_key or has_url:
-            pid = provider["id"]
-            # Get models from our registry, or use a default generic list
-            models = KNOWN_MODELS.get(pid, ["default-model"])
+            models = []
+            
+            # 1. SPECIAL CASE: RunPod/Ollama
+            # We delegate the work to the dedicated Ollama feature
+            if pid == "runpod":
+                models = get_remote_ollama_models(provider.get("url"))
+            
+            # 2. STANDARD CASE: Cloud Providers
+            # We use our static list
+            else:
+                models = KNOWN_MODELS.get(pid, ["default-model"])
             
             active_list.append({
                 "id": pid,
