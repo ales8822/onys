@@ -9,6 +9,9 @@ export default function MainLayout() {
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
 
+  const [inputMessage, setInputMessage] = useState("");
+  const [chatHistory, setChatHistory] = useState([]); // Store real messages
+  const [isLoading, setIsLoading] = useState(false);
   // Fetch Providers on Load (and when settings close)
   useEffect(() => {
     fetchProviders();
@@ -30,6 +33,38 @@ export default function MainLayout() {
     }
   };
 
+  const handleSendMessage = async () => {
+  if (!inputMessage.trim() || !selectedProviderId) return;
+
+  const newMessage = { role: 'user', content: inputMessage };
+  // Optimistic update (show user message immediately)
+  const updatedHistory = [...chatHistory, newMessage];
+  setChatHistory(updatedHistory);
+  setInputMessage(""); // Clear input
+  setIsLoading(true);
+
+  try {
+    const res = await fetch('http://localhost:8004/api/chat/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider_id: selectedProviderId,
+        model_id: selectedModel,
+        messages: updatedHistory 
+      }),
+    });
+    
+    const data = await res.json();
+    
+    // Add AI response to history
+    setChatHistory(prev => [...prev, { role: 'assistant', content: data.content }]);
+  } catch (error) {
+    console.error("Chat error:", error);
+    alert("Failed to send message");
+  } finally {
+    setIsLoading(false);
+  }
+  };
   // Find the currently selected provider object to get its models
   const currentProvider = activeProviders.find(p => p.id === selectedProviderId);
 
@@ -133,7 +168,22 @@ export default function MainLayout() {
         <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center">
              {/* Mock Chat Conversation for Visual Check */}
              <div className="w-full max-w-3xl space-y-6">
-                 
+                 {/* Real Chat History */}
+             {chatHistory.map((msg, idx) => (
+                <div key={idx} className={`flex items-start gap-4 text-left ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                    {msg.role === 'assistant' && (
+                       <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold">AI</div>
+                    )}
+                    
+                    <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm' : 'text-gray-300'} text-sm max-w-[80%] ${msg.role === 'user' ? 'px-4 py-3' : ''}`}>
+                         {msg.content}
+                    </div>
+
+                    {msg.role === 'user' && (
+                       <div className="w-8 h-8 rounded-full bg-gray-500 flex-shrink-0 flex items-center justify-center text-[10px]">ME</div>
+                    )}
+                </div>
+             ))}
                  {/* Bot Message */}
                  <div className="flex items-start gap-4 text-left">
                     <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold">AI</div>
@@ -172,25 +222,32 @@ export default function MainLayout() {
         <div className="p-6 pt-2 bg-app-bg">
             <div className="max-w-4xl mx-auto bg-[#1a1a1a] border border-gray-700 rounded-xl p-3 flex flex-col gap-2 shadow-lg">
                 <input 
-                        type="textarea" 
-                        placeholder={`Message ${selectedModel || '...'}...`}
-                        className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
-                    />
-                <div className="flex justify-between items-center mt-2 border-t border-gray-800 pt-2">
-                    <div className="flex gap-2">
-                        <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Attach file">
+                type="text" 
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} // Allow Enter to send
+                placeholder={`Message ${selectedModel || '...'}...`}
+                disabled={isLoading}
+                className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
+            />
+            <div className="flex justify-between items-center mt-2 border-t border-gray-800 pt-2">
+                <div className="flex gap-2">
+                     {/* Attach Buttons (Keep existing) */}
+                     <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Attach file">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" >
                             <path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"></path>
                         </svg>
-                        </button>
-                        <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Enhance prompt">
-                            ✨
-                        </button>
-                    </div>
-                    <button className="bg-gray-700 text-white p-2 px-4 rounded hover:bg-gray-600 transition text-xs font-bold">
-                        SEND ➤
-                    </button>
+                     </button>
+                     <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Enhance prompt">✨</button>
                 </div>
+                <button 
+                    onClick={handleSendMessage}
+                    disabled={isLoading}
+                    className={`bg-gray-700 text-white p-2 px-4 rounded hover:bg-gray-600 transition text-xs font-bold ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                    {isLoading ? 'SENDING...' : 'SEND ➤'}
+                </button>
+            </div>
             </div>
             <div className="text-center text-[10px] text-gray-600 mt-2 flex justify-between px-2 max-w-4xl mx-auto">
                  <span>Context: 1,248 / 8192</span>
