@@ -6,8 +6,8 @@ export default function MainLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   // Simple ID generation for this session (persists until refresh)
-  const [chatId] = useState(() => "session-" + Math.random().toString(36).substr(2, 9));
-  // Data State
+  const [chatId] = useState(() => "session-" + Math.random().toString(36).substr(2, 9)); 
+   // Data State
   const [activeProviders, setActiveProviders] = useState([]);
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -161,12 +161,13 @@ export default function MainLayout() {
 
             {/* Right Header Buttons (Kept same as before) */}
             <div className="flex items-center gap-3 text-gray-400">
-                              <button 
-                  onClick={() => setIsInstructionsOpen(true)}
-                  className="hover:text-white text-xs bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded transition"
-                >
-                  📜 Instructions
-                </button>
+
+                     <button 
+                        onClick={() => setIsInstructionsOpen(true)}
+                        className="hover:text-white text-xs bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded transition"
+                     >
+                        📜 Instructions
+                     </button>
                  <button className="hover:text-white px-3 py-1.5 rounded bg-[#222] text-xs border border-gray-700 transition">Project Notes: Coffee Campaign</button>
                  <button className="hover:text-white text-xs bg-accent text-white px-3 py-1.5 rounded transition">Save</button>
                  <button className="hover:text-white text-xs border border-gray-700 px-3 py-1.5 rounded transition">Export</button>
@@ -194,36 +195,7 @@ export default function MainLayout() {
                     )}
                 </div>
              ))}
-                 {/* Bot Message */}
-                 <div className="flex items-start gap-4 text-left">
-                    <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold">AI</div>
-                    <div className="flex-1">
-                        <div className="text-sm font-bold text-orange-400 mb-1">Creative Writer <span className="text-gray-500 text-xs font-normal ml-2">10:41 AM</span></div>
-                        <p className="text-gray-300 text-sm leading-relaxed">Hello! How can I assist your creative process today? Let's brainstorm some ideas together.</p>
-                    </div>
-                 </div>
-                 
-                 {/* User Message */}
-                 <div className="flex items-start gap-4 text-left justify-end">
-                    <div className="bg-accent px-4 py-3 rounded-2xl rounded-tr-sm text-sm text-white max-w-[80%]">
-                        I need to come up with a marketing slogan for a new eco-friendly coffee brand.
-                    </div>
-                    <div className="w-8 h-8 rounded-full bg-gray-500 flex-shrink-0 flex items-center justify-center text-[10px]">ME</div>
-                 </div>
-
-                  {/* Bot Reply */}
-                  <div className="flex items-start gap-4 text-left">
-                    <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold">AI</div>
-                    <div className="flex-1">
-                        <div className="text-sm font-bold text-orange-400 mb-1">Creative Writer <span className="text-gray-500 text-xs font-normal ml-2">10:42 AM</span></div>
-                        <p className="text-gray-300 text-sm leading-relaxed mb-2">Of course! Here are a few ideas to get us started:</p>
-                        <ol className="list-decimal pl-5 text-gray-300 text-sm space-y-1">
-                            <li>"Sip Sustainably."</li>
-                            <li>"Your Daily Grind, Kind to the Earth."</li>
-                            <li>"Goodness in Every Cup."</li>
-                        </ol>
-                    </div>
-                 </div>
+              
 
             </div>
         </div>
