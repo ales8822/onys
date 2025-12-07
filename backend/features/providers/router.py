@@ -11,7 +11,7 @@ SETTINGS_FILE = "user_settings.json"
 KNOWN_MODELS = {
     "openai": ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
     "anthropic": ["claude-3-5-sonnet", "claude-3-opus", "claude-3-haiku"],
-    "gemini": ["gemini-1.5-pro", "gemini-2.0-latest", "gemini-2.5-flash", "gemini-1.5-flash"],
+    "gemini": ["gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"],
     "grok": ["grok-beta"],
 }
 
