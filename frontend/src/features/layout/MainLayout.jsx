@@ -1,8 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SettingsModal from '../settings/SettingsModal';
 
 export default function MainLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  // Data State
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+
+  // Fetch Providers on Load (and when settings close)
+  useEffect(() => {
+    fetchProviders();
+  }, [isSettingsOpen]); // Refetch when settings might have changed
+
+  const fetchProviders = async () => {
+    try {
+      const res = await fetch('http://localhost:8004/api/providers/active');
+      const data = await res.json();
+      setActiveProviders(data);
+
+      // Auto-select first provider if available and none selected
+      if (data.length > 0 && !selectedProviderId) {
+        setSelectedProviderId(data[0].id);
+        setSelectedModel(data[0].models[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load providers");
+    }
+  };
+
+  // Find the currently selected provider object to get its models
+  const currentProvider = activeProviders.find(p => p.id === selectedProviderId);
 
   return (
     <div className="flex h-screen w-screen bg-app-bg text-white overflow-hidden font-sans">
@@ -47,21 +76,58 @@ export default function MainLayout() {
                 <button className="flex items-center gap-2 px-3 py-1.5 bg-[#222] hover:bg-[#333] rounded text-xs text-gray-300 border border-gray-700 transition">
                     👥 2 Agents
                 </button>
-                <button className="flex items-center gap-2 px-3 py-1.5 bg-[#222] hover:bg-[#333] rounded text-xs text-gray-300 border border-gray-700 transition">
-                   Google Gemini ▾
-                </button>
-                <button className="flex items-center gap-2 px-3 py-1.5 bg-[#222] hover:bg-[#333] rounded text-xs text-accent border border-accent/20 transition">
-                   ● Gemini 2.5 Flash ▾
-                </button>
+
+                {/* DYNAMIC PROVIDER DROPDOWN */}
+                <div className="relative">
+                  <select 
+                    value={selectedProviderId}
+                    onChange={(e) => {
+                      setSelectedProviderId(e.target.value);
+                      // Reset model when provider changes
+                      const newProv = activeProviders.find(p => p.id === e.target.value);
+                      if (newProv) setSelectedModel(newProv.models[0]);
+                    }}
+                    className="appearance-none bg-[#222] hover:bg-[#333] text-gray-300 border border-gray-700 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition"
+                  >
+                    {activeProviders.length === 0 && <option>No Providers Configured</option>}
+                    {activeProviders.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  {/* Custom Arrow Icon */}
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                    <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                  </div>
+                </div>
+
+                {/* DYNAMIC MODEL DROPDOWN */}
+                {currentProvider && (
+                  <div className="relative">
+                    <select 
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="appearance-none bg-[#222] hover:bg-[#333] text-accent border border-accent/20 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition font-medium"
+                    >
+                      {currentProvider.models.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                     {/* Custom Arrow Icon */}
+                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-accent">
+                      <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                    </div>
+                  </div>
+                )}
             </div>
 
-            {/* Right Header Buttons */}
+            {/* Right Header Buttons (Kept same as before) */}
             <div className="flex items-center gap-3 text-gray-400">
                  <button className="hover:text-white px-3 py-1.5 rounded bg-[#222] text-xs border border-gray-700 transition">Project Notes: Coffee Campaign</button>
                  <button className="hover:text-white text-xs bg-accent text-white px-3 py-1.5 rounded transition">Save</button>
                  <button className="hover:text-white text-xs border border-gray-700 px-3 py-1.5 rounded transition">Export</button>
             </div>
         </div>
+        
 
         {/* 2.2 Chat Content Area (Scrollable) */}
         <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center">
@@ -106,10 +172,10 @@ export default function MainLayout() {
         <div className="p-6 pt-2 bg-app-bg">
             <div className="max-w-4xl mx-auto bg-[#1a1a1a] border border-gray-700 rounded-xl p-3 flex flex-col gap-2 shadow-lg">
                 <input 
-                    type="text" 
-                    placeholder="Message Gemini 2.5 Flash..." 
-                    className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
-                />
+                        type="textarea" 
+                        placeholder={`Message ${selectedModel || '...'}...`}
+                        className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
+                    />
                 <div className="flex justify-between items-center mt-2 border-t border-gray-800 pt-2">
                     <div className="flex gap-2">
                         <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Attach file">

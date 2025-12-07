@@ -24,7 +24,11 @@ export default function SettingsModal({ isOpen, onClose }) {
            // Merge saved data with default structure to ensure all providers exist
            const merged = DEFAULT_PROVIDERS.map(def => {
              const found = data.providers.find(p => p.id === def.id);
-             return found || def;
+             // If found, merge saved keys/url BUT keep the original 'type' from defaults
+             if (found) {
+                 return { ...found, type: def.type, name: def.name }; 
+             }
+             return def;
            });
            setProviders(merged);
         }
@@ -88,15 +92,37 @@ export default function SettingsModal({ isOpen, onClose }) {
           {/* Left: Provider List */}
           <div className="w-1/3 bg-[#222] border-r border-gray-600 p-2 overflow-y-auto">
             <h3 className="text-gray-400 text-xs uppercase mb-2 px-2">LLM Providers</h3>
-            {providers.map(p => (
-              <button
-                key={p.id}
-                onClick={() => setActiveTab(p.id)}
-                className={`w-full text-left p-3 rounded mb-1 ${activeTab === p.id ? 'bg-accent text-white' : 'text-gray-300 hover:bg-gray-700'}`}
-              >
-                {p.name}
-              </button>
-            ))}
+            {providers.map(p => {
+              // Calculate how many valid configurations exist for this provider
+              const activeCount = p.type === 'cloud'
+                ? p.keys.filter(k => k && k.trim() !== '').length
+                : (p.url && p.url.trim() !== '' ? 1 : 0);
+
+              const isActive = activeTab === p.id;
+
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setActiveTab(p.id)}
+                  className={`w-full text-left p-3 rounded mb-1 flex items-center justify-between group transition-colors ${
+                    isActive ? 'bg-accent text-white' : 'text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  <span className="font-medium">{p.name}</span>
+                  
+                  {/* Show badge if keys/url exist */}
+                  {activeCount > 0 && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        isActive 
+                        ? 'bg-white bg-opacity-20 text-white' 
+                        : 'bg-gray-800 text-gray-400 group-hover:bg-gray-600'
+                    }`}>
+                      {p.type === 'cloud' ? `${activeCount} KEY${activeCount > 1 ? 'S' : ''}` : 'LINKED'}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* Right: API Keys & URLs */}
