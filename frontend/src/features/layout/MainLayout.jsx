@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import SettingsModal from '../settings/SettingsModal';
+import InstructionModal from '../instructions/InstructionModal';
 
 export default function MainLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
+  const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
+  // Simple ID generation for this session (persists until refresh)
+  const [chatId] = useState(() => "session-" + Math.random().toString(36).substr(2, 9));
   // Data State
   const [activeProviders, setActiveProviders] = useState([]);
   const [selectedProviderId, setSelectedProviderId] = useState('');
@@ -48,6 +51,7 @@ export default function MainLayout() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        chat_id: chatId,
         provider_id: selectedProviderId,
         model_id: selectedModel,
         messages: updatedHistory 
@@ -157,6 +161,12 @@ export default function MainLayout() {
 
             {/* Right Header Buttons (Kept same as before) */}
             <div className="flex items-center gap-3 text-gray-400">
+                              <button 
+                  onClick={() => setIsInstructionsOpen(true)}
+                  className="hover:text-white text-xs bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded transition"
+                >
+                  📜 Instructions
+                </button>
                  <button className="hover:text-white px-3 py-1.5 rounded bg-[#222] text-xs border border-gray-700 transition">Project Notes: Coffee Campaign</button>
                  <button className="hover:text-white text-xs bg-accent text-white px-3 py-1.5 rounded transition">Save</button>
                  <button className="hover:text-white text-xs border border-gray-700 px-3 py-1.5 rounded transition">Export</button>
@@ -295,6 +305,11 @@ export default function MainLayout() {
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
       />
+      <InstructionModal 
+        isOpen={isInstructionsOpen} 
+        onClose={() => setIsInstructionsOpen(false)}
+        chatId={chatId}
+     />
     </div>
   );
 }

@@ -6,6 +6,7 @@ class ChatMessage(BaseModel):
     content: str
 
 class ChatRequest(BaseModel):
+    chat_id: str
     provider_id: str
     model_id: str
     messages: List[ChatMessage]

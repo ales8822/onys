@@ -1,6 +1,7 @@
 import httpx
 import json
 import os
+from features.instructions.service import get_instruction
 
 SETTINGS_FILE = "user_settings.json"
 
@@ -76,58 +77,36 @@ async def process_chat(request):
     if not config:
         return "Provider configuration not found."
 
-    # DISPATCHER
-    raw_response = None
-    answer_text = ""
-
-    # 1. Dispatch Send
-    if request.provider_id == "runpod":
-        raw_response = await send_to_ollama(config.get("url"), request.model_id, [m.dict() for m in request.messages])
-        # 2. Dispatch Receive
-        answer_text = parse_ollama_response(raw_response)
-
-    elif request.provider_id == "openai":
-        # Get the first key
-        keys = config.get("keys", [])
-        key = keys[0] if keys else ""
-        raw_response = await send_to_openai(key, request.model_id, [m.dict() for m in request.messages])
-        answer_text = parse_openai_response(raw_response)
-
-    else:
-        return f"Provider '{request.provider_id}' logic not implemented yet."
-
-    return answer_text
-
-# --- MAIN ORCHESTRATOR ---
-async def process_chat(request):
-    config = get_provider_config(request.provider_id)
-    if not config:
-        return "Provider configuration not found."
+    # 0. INJECT INSTRUCTIONS
+    # We fetch instructions for this specific chat
+    system_instruction = get_instruction(request.chat_id)
+    
+    # We create a new list of messages to avoid modifying the original request object directly
+    final_messages = [m.dict() for m in request.messages]
+    
+    if system_instruction:
+        # Insert as the very first message
+        final_messages.insert(0, {"role": "system", "content": system_instruction})
 
     # DISPATCHER
     raw_response = None
     answer_text = ""
 
-    # 1. Dispatch Send
     if request.provider_id == "runpod":
-        # RunPod doesn't use keys, it uses the URL
         raw_response = await send_to_ollama(
             config.get("url"), 
             request.model_id, 
-            [m.dict() for m in request.messages]
+            final_messages # <--- Use the injected list
         )
-        # 2. Dispatch Receive
         answer_text = parse_ollama_response(raw_response)
 
     elif request.provider_id == "openai":
-        # Get the first key
         keys = config.get("keys", [])
         key = keys[0] if keys else ""
-        
         raw_response = await send_to_openai(
             key, 
             request.model_id, 
-            [m.dict() for m in request.messages]
+            final_messages # <--- Use the injected list
         )
         answer_text = parse_openai_response(raw_response)
 
