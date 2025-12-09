@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SettingsModal from '../settings/SettingsModal';
 import InstructionModal from '../instructions/InstructionModal';
 import ChatArea from '../chat/ChatArea'; // Using the dedicated ChatArea component
+import SidebarSessionList from '../sessions/SidebarSessionList';
 
 export default function MainLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -41,6 +42,17 @@ export default function MainLayout() {
     setChatId("session-" + Math.random().toString(36).substr(2, 9));
   };
 
+  const handleLoadSession = async (sessionId) => {
+    try {
+      const res = await fetch(`http://localhost:8004/api/sessions/${sessionId}`);
+      const data = await res.json();
+      
+      setChatHistory(data); // Restore visual history
+      setChatId(sessionId); // Set internal ID so future messages append to this file
+    } catch (err) {
+      console.error("Failed to load session", err);
+    }
+  };
   const currentProvider = activeProviders.find(p => p.id === selectedProviderId);
 
   return (
@@ -57,6 +69,12 @@ export default function MainLayout() {
         
         {/* Visual Menu Placeholders */}
         <div className="flex-1 px-4 py-2 space-y-1">
+          {/* Real Session History */}
+        <SidebarSessionList 
+            onSelectSession={handleLoadSession} 
+            currentChatId={chatId}
+            refreshTrigger={chatHistory.length} // Force refresh list when chat changes
+        />
             <div className="bg-accent bg-opacity-10 text-accent p-2 rounded cursor-pointer text-sm font-medium">Dashboard</div>
             <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm">Workspaces</div>
             <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm">Agent Library</div>

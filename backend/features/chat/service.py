@@ -2,8 +2,17 @@ import httpx
 import json
 import os
 from features.instructions.service import get_instruction
+from features.sessions.service import save_session
 
 SETTINGS_FILE = "user_settings.json"
+
+# Force the AI to format responses correctly
+FORMATTING_INSTRUCTION = """
+SYSTEM FORMATTING RULES:
+1. When presenting data, use Markdown Tables. Do NOT wrap tables in code blocks (```).
+2. When quoting, use Markdown Blockquotes (> quote).
+3. Use Bold (**text**) for key terms.
+"""
 
 # --- HELPER: Load Config ---
 def get_provider_config(provider_id: str):
@@ -24,7 +33,6 @@ async def send_to_runpod(url: str, model: str, messages: list):
         raise Exception("RunPod/Ollama URL is missing.")
     clean_url = url.rstrip("/") + "/api/chat"
     
-    # RunPod usually handles 'system' role fine in messages
     payload = { "model": model, "messages": messages, "stream": False }
     
     async with httpx.AsyncClient() as client:
@@ -39,7 +47,7 @@ async def send_to_openai_compatible(key: str, model: str, messages: list, base_u
         return await client.post(base_url, headers=headers, json=payload, timeout=60.0)
 
 async def send_to_anthropic(key: str, model: str, messages: list):
-    """Anthropic (Claude) - Requires extracting system message"""
+    """Anthropic (Claude)"""
     url = "https://api.anthropic.com/v1/messages"
     headers = {
         "x-api-key": key,
@@ -47,13 +55,17 @@ async def send_to_anthropic(key: str, model: str, messages: list):
         "content-type": "application/json"
     }
 
-    # Extract system message if present (Anthropic wants it top-level)
+    # Extract system message
     system_prompt = None
     clean_messages = []
     
     for msg in messages:
         if msg['role'] == 'system':
-            system_prompt = msg['content']
+            # Combine multiple system msgs if needed
+            if system_prompt:
+                system_prompt += "\n" + msg['content']
+            else:
+                system_prompt = msg['content']
         else:
             clean_messages.append(msg)
 
@@ -69,11 +81,9 @@ async def send_to_anthropic(key: str, model: str, messages: list):
         return await client.post(url, headers=headers, json=payload, timeout=60.0)
 
 async def send_to_gemini(key: str, model: str, messages: list):
-    """Google Gemini - REST API structure is different"""
-    # URL format: .../models/{model}:generateContent?key={key}
+    """Google Gemini"""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     
-    # 1. Handle System Instruction
     system_instruction = None
     contents = []
 
@@ -81,7 +91,6 @@ async def send_to_gemini(key: str, model: str, messages: list):
         if msg['role'] == 'system':
             system_instruction = { "parts": [{ "text": msg['content'] }] }
         else:
-            # Map roles: 'assistant' -> 'model', 'user' -> 'user'
             role = "model" if msg['role'] == "assistant" else "user"
             contents.append({
                 "role": role,
@@ -116,7 +125,6 @@ def parse_anthropic_response(response) -> str:
     if response.status_code != 200:
         return f"Error {response.status_code}: {response.text}"
     data = response.json()
-    # Content is a list of blocks
     content_blocks = data.get("content", [])
     if content_blocks and len(content_blocks) > 0:
         return content_blocks[0].get("text", "")
@@ -126,7 +134,6 @@ def parse_gemini_response(response) -> str:
     if response.status_code != 200:
         return f"Error {response.status_code}: {response.text}"
     data = response.json()
-    # Path: candidates[0].content.parts[0].text
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError):
@@ -139,47 +146,62 @@ async def process_chat(request):
     if not config:
         return "Provider configuration not found."
 
-    # 0. INJECT INSTRUCTIONS
-    system_instruction = get_instruction(request.chat_id)
+    # 1. INJECT INSTRUCTIONS (User defined + Formatting Rules)
+    user_instruction = get_instruction(request.chat_id)
+    combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{user_instruction if user_instruction else ''}"
+
+    # We make a copy of messages to send to the AI
     final_messages = [m.dict() for m in request.messages]
     
-    if system_instruction:
-        # We assume standard role:system for now, specific senders extract it if needed
-        final_messages.insert(0, {"role": "system", "content": system_instruction})
+    # Insert system prompt at the top
+    final_messages.insert(0, {"role": "system", "content": combined_system_prompt})
 
-    # 1. PREPARE KEYS/URL
+    # 2. PREPARE KEYS/URL
     keys = config.get("keys", [])
     key = keys[0] if keys else ""
     url = config.get("url", "")
     pid = request.provider_id
 
-    # 2. DISPATCHER
+    # 3. DISPATCHER
     raw_response = None
+    answer_text = ""  # We store the result here instead of returning immediately
     
     try:
         if pid == "runpod":
             raw_response = await send_to_runpod(url, request.model_id, final_messages)
-            return parse_runpod_response(raw_response)
+            answer_text = parse_runpod_response(raw_response)
 
         elif pid == "openai":
             raw_response = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.openai.com/v1/chat/completions")
-            return parse_openai_response(raw_response)
+            answer_text = parse_openai_response(raw_response)
 
         elif pid == "grok":
-            # Grok is compatible with OpenAI structure
             raw_response = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.x.ai/v1/chat/completions")
-            return parse_openai_response(raw_response)
+            answer_text = parse_openai_response(raw_response)
 
         elif pid == "anthropic":
             raw_response = await send_to_anthropic(key, request.model_id, final_messages)
-            return parse_anthropic_response(raw_response)
+            answer_text = parse_anthropic_response(raw_response)
         
         elif pid == "gemini":
             raw_response = await send_to_gemini(key, request.model_id, final_messages)
-            return parse_gemini_response(raw_response)
+            answer_text = parse_gemini_response(raw_response)
 
         else:
             return f"Provider '{pid}' not implemented."
 
     except Exception as e:
         return f"System Error: {str(e)}"
+
+    # 4. AUTO-SAVE SESSION (Medium-Term Memory)
+    # We reconstruct the 'real' history (User Request + AI Answer)
+    # Note: request.messages already contains the history UP TO the current user question.
+    # We just append the new answer.
+    
+    new_history = [m.dict() for m in request.messages]
+    new_history.append({"role": "assistant", "content": answer_text})
+    
+    # Save to disk
+    save_session(request.chat_id, new_history)
+
+    return answer_text
