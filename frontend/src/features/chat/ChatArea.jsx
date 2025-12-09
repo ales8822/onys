@@ -15,6 +15,13 @@ export default function ChatArea({
   const [tooltip, setTooltip] = useState({ show: false, y: 0, content: "" });
   // 1. REFS: We store a reference to every message DOM element
   const messageRefs = useRef({});
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleCopyMessage = (content, id) => {
+    navigator.clipboard.writeText(content);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000); // Reset after 2 seconds
+  };
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !selectedProviderId) return;
@@ -39,7 +46,13 @@ export default function ChatArea({
       });
       
       const data = await res.json();
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.content, id: Date.now() + 1 }]);
+      setChatHistory(prev => [...prev, { 
+        role: 'assistant', 
+        content: data.content, 
+        id: Date.now() + 1,
+        model: selectedModel, // <--- Save the model name
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) // <--- Save time
+      }]);
     } catch (error) {
       console.error("Chat error:", error);
       alert("Failed to send message");
@@ -74,22 +87,60 @@ export default function ChatArea({
              {chatHistory.map((msg, idx) => (
                 <div 
                     key={idx} 
-                    // Assign ref based on index so Timeline can find it
                     ref={(el) => messageRefs.current[idx] = el} 
                     className={`flex items-start gap-4 text-left ${msg.role === 'user' ? 'justify-end' : ''}`}
                 >
-                    
+                    {/* AI AVATAR & HEADER COLUMN */}
                     {msg.role === 'assistant' && (
-                       <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold shadow-lg">AI</div>
+                       <div className="flex flex-col items-center gap-1">
+                           {/* Avatar */}
+                           <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold shadow-lg ring-2 ring-[#1a1a1a]">
+                               AI
+                           </div>
+                       </div>
                     )}
                     
-                    <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm shadow-md' : 'text-gray-300'} text-sm max-w-[85%] ${msg.role === 'user' ? 'px-5 py-3' : ''}`}>
-                         {/* Render Markdown for both, or just AI. Used for both here for consistency */}
-                         <MarkdownRenderer content={msg.content} />
+                    {/* MESSAGE CONTENT COLUMN */}
+                    <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        
+                        {/* 1. NEW: Info Header (Only for AI) */}
+                        {msg.role === 'assistant' && (
+                            <div className="flex items-center gap-2 mb-1 ml-1">
+                                <span className="text-[11px] font-bold text-orange-400/80 uppercase tracking-wider">
+                                    {msg.model || 'Unknown Model'}
+                                </span>
+                                <span className="text-[10px] text-gray-600">
+                                    {msg.timestamp}
+                                </span>
+                                {/* Copy Icon with Feedback */}
+                                <button 
+                                    onClick={() => handleCopyMessage(msg.content, msg.id)}
+                                    className={`ml-2 transition-all duration-200 flex items-center gap-1 ${
+                                        copiedId === msg.id ? 'text-green-400' : 'text-gray-600 hover:text-white'
+                                    }`}
+                                    title="Copy full response"
+                                >
+                                    {copiedId === msg.id ? (
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                            <span className="text-[10px] font-bold">Copied</span>
+                                        </>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* 2. Message Bubble */}
+                        <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm shadow-md px-5 py-3' : 'text-gray-300'} text-sm w-full`}>
+                             <MarkdownRenderer content={msg.content} />
+                        </div>
                     </div>
 
+                    {/* USER AVATAR */}
                     {msg.role === 'user' && (
-                       <div className="w-8 h-8 rounded-full bg-gray-500 flex-shrink-0 flex items-center justify-center text-[10px] shadow-lg">ME</div>
+                       <div className="w-8 h-8 rounded-full bg-gray-500 flex-shrink-0 flex items-center justify-center text-[10px] shadow-lg ring-2 ring-[#1a1a1a]">ME</div>
                     )}
                 </div>
              ))}
