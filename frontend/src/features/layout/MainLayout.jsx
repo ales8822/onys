@@ -1,24 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import SettingsModal from '../settings/SettingsModal';
 import InstructionModal from '../instructions/InstructionModal';
+import ChatArea from '../chat/ChatArea'; // Using the dedicated ChatArea component
 
 export default function MainLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
-  // Simple ID generation for this session (persists until refresh)
-  const [chatId] = useState(() => "session-" + Math.random().toString(36).substr(2, 9)); 
-   // Data State
+  
+  // Data State
   const [activeProviders, setActiveProviders] = useState([]);
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  
+  // Chat State
+  const [chatHistory, setChatHistory] = useState([]); 
+  const [chatId, setChatId] = useState(() => "session-" + Math.random().toString(36).substr(2, 9));
 
-  const [inputMessage, setInputMessage] = useState("");
-  const [chatHistory, setChatHistory] = useState([]); // Store real messages
-  const [isLoading, setIsLoading] = useState(false);
-  // Fetch Providers on Load (and when settings close)
+  // Fetch Providers on Load
   useEffect(() => {
     fetchProviders();
-  }, [isSettingsOpen]); // Refetch when settings might have changed
+  }, [isSettingsOpen]); 
 
   const fetchProviders = async () => {
     try {
@@ -26,7 +27,6 @@ export default function MainLayout() {
       const data = await res.json();
       setActiveProviders(data);
 
-      // Auto-select first provider if available and none selected
       if (data.length > 0 && !selectedProviderId) {
         setSelectedProviderId(data[0].id);
         setSelectedModel(data[0].models[0]);
@@ -36,40 +36,11 @@ export default function MainLayout() {
     }
   };
 
-  const handleSendMessage = async () => {
-  if (!inputMessage.trim() || !selectedProviderId) return;
-
-  const newMessage = { role: 'user', content: inputMessage };
-  // Optimistic update (show user message immediately)
-  const updatedHistory = [...chatHistory, newMessage];
-  setChatHistory(updatedHistory);
-  setInputMessage(""); // Clear input
-  setIsLoading(true);
-
-  try {
-    const res = await fetch('http://localhost:8004/api/chat/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        provider_id: selectedProviderId,
-        model_id: selectedModel,
-        messages: updatedHistory 
-      }),
-    });
-    
-    const data = await res.json();
-    
-    // Add AI response to history
-    setChatHistory(prev => [...prev, { role: 'assistant', content: data.content }]);
-  } catch (error) {
-    console.error("Chat error:", error);
-    alert("Failed to send message");
-  } finally {
-    setIsLoading(false);
-  }
+  const handleNewChat = () => {
+    setChatHistory([]);
+    setChatId("session-" + Math.random().toString(36).substr(2, 9));
   };
-  // Find the currently selected provider object to get its models
+
   const currentProvider = activeProviders.find(p => p.id === selectedProviderId);
 
   return (
@@ -77,7 +48,6 @@ export default function MainLayout() {
       
       {/* SECTION 1: Sidebar (Left) */}
       <div className="w-64 bg-sidebar-bg border-r border-gray-800 flex flex-col justify-between flex-shrink-0">
-        {/* Logo Area */}
         <div className="p-6">
           <h1 className="text-2xl font-bold tracking-wider text-white">
             <span className="text-accent">●</span> Onys
@@ -85,7 +55,7 @@ export default function MainLayout() {
           <p className="text-xs text-gray-500 mt-1">Workspace AI</p>
         </div>
         
-        {/* Sidebar Menu (Visual Placeholder) */}
+        {/* Visual Menu Placeholders */}
         <div className="flex-1 px-4 py-2 space-y-1">
             <div className="bg-accent bg-opacity-10 text-accent p-2 rounded cursor-pointer text-sm font-medium">Dashboard</div>
             <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm">Workspaces</div>
@@ -93,7 +63,6 @@ export default function MainLayout() {
             <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm">Automation Hub</div>
         </div>
 
-        {/* Settings Button */}
         <div className="p-4 border-t border-gray-800">
           <button 
             onClick={() => setIsSettingsOpen(true)}
@@ -105,137 +74,87 @@ export default function MainLayout() {
         </div>
       </div>
 
-      {/* SECTION 2: Main Chat (Center) */}
+      {/* SECTION 2: Center Layout (Header + ChatArea) */}
       <div className="flex-1 flex flex-col min-w-0 bg-app-bg relative">
         
-        {/* 2.1 Top Header Bar (Model/Agent Selectors) */}
-        <div className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-app-bg z-10">
-            <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white">MA</div>
+        {/* 2.1 Top Header Bar */}
+        <div className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-app-bg z-10 flex-shrink-0">
+            <div className="flex items-center gap-3">
+                {/* Agent Avatar & Selector */}
+                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">MA</div>
                 <button className="flex items-center gap-2 px-3 py-1.5 bg-[#222] hover:bg-[#333] rounded text-xs text-gray-300 border border-gray-700 transition">
                     👥 2 Agents
                 </button>
 
                 {/* DYNAMIC PROVIDER DROPDOWN */}
-                <div className="relative">
+                <div className="relative group">
                   <select 
                     value={selectedProviderId}
                     onChange={(e) => {
                       setSelectedProviderId(e.target.value);
-                      // Reset model when provider changes
                       const newProv = activeProviders.find(p => p.id === e.target.value);
                       if (newProv) setSelectedModel(newProv.models[0]);
                     }}
-                    className="appearance-none bg-[#222] hover:bg-[#333] text-gray-300 border border-gray-700 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition"
+                    className="appearance-none bg-[#222] hover:bg-[#333] text-gray-300 border border-gray-700 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition min-w-[100px]"
                   >
-                    {activeProviders.length === 0 && <option>No Providers Configured</option>}
-                    {activeProviders.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                    {activeProviders.length === 0 && <option>No Providers</option>}
+                    {activeProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
-                  {/* Custom Arrow Icon */}
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-                    <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
-                  </div>
+                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">▼</div>
                 </div>
 
                 {/* DYNAMIC MODEL DROPDOWN */}
                 {currentProvider && (
-                  <div className="relative">
+                  <div className="relative group">
                     <select 
                       value={selectedModel}
                       onChange={(e) => setSelectedModel(e.target.value)}
-                      className="appearance-none bg-[#222] hover:bg-[#333] text-accent border border-accent/20 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition font-medium"
+                      className="appearance-none bg-[#222] hover:bg-[#333] text-accent border border-accent/20 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition font-medium min-w-[140px]"
                     >
-                      {currentProvider.models.map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
+                      {currentProvider.models.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                     {/* Custom Arrow Icon */}
-                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-accent">
-                      <svg className="fill-current h-3 w-3" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
-                    </div>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-accent">▼</div>
                   </div>
                 )}
             </div>
 
-            {/* Right Header Buttons (Kept same as before) */}
+            {/* Right Header Buttons (Restored) */}
             <div className="flex items-center gap-3 text-gray-400">
+                 <button 
+                    className="hover:text-white px-3 py-1.5 rounded bg-[#222] text-xs border border-gray-700 transition"
+                    title="View Project Notes"
+                 >
+                    Project Notes: Coffee Campaign
+                 </button>
 
-                     <button 
-                        onClick={() => setIsInstructionsOpen(true)}
-                        className="hover:text-white text-xs bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded transition"
-                     >
-                        📜 Instructions
-                     </button>
-                 <button className="hover:text-white px-3 py-1.5 rounded bg-[#222] text-xs border border-gray-700 transition">Project Notes: Coffee Campaign</button>
-                 <button className="hover:text-white text-xs bg-accent text-white px-3 py-1.5 rounded transition">Save</button>
-                 <button className="hover:text-white text-xs border border-gray-700 px-3 py-1.5 rounded transition">Export</button>
+                 <button 
+                    onClick={handleNewChat}
+                    className="hover:text-white text-xs bg-red-900/30 text-red-400 border border-red-900/50 px-3 py-1.5 rounded transition flex items-center gap-2"
+                 >
+                    <span>🗑️</span> New Chat
+                 </button>
+
+                 <button 
+                    onClick={() => setIsInstructionsOpen(true)}
+                    className="hover:text-white text-xs bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded transition"
+                 >
+                    📜 Instructions
+                 </button>
+
+                 <button className="hover:text-white text-xs bg-accent text-white px-3 py-1.5 rounded transition shadow-md hover:shadow-lg">Save</button>
+                 <button className="hover:text-white text-xs border border-gray-700 px-3 py-1.5 rounded transition hover:bg-gray-800">Export</button>
             </div>
         </div>
-        
-
-        {/* 2.2 Chat Content Area (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center">
-             {/* Mock Chat Conversation for Visual Check */}
-             <div className="w-full max-w-3xl space-y-6">
-                 {/* Real Chat History */}
-             {chatHistory.map((msg, idx) => (
-                <div key={idx} className={`flex items-start gap-4 text-left ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                    {msg.role === 'assistant' && (
-                       <div className="w-8 h-8 rounded-full bg-orange-600 flex-shrink-0 flex items-center justify-center text-[10px] font-bold">AI</div>
-                    )}
-                    
-                    <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm' : 'text-gray-300'} text-sm max-w-[80%] ${msg.role === 'user' ? 'px-4 py-3' : ''}`}>
-                         {msg.content}
-                    </div>
-
-                    {msg.role === 'user' && (
-                       <div className="w-8 h-8 rounded-full bg-gray-500 flex-shrink-0 flex items-center justify-center text-[10px]">ME</div>
-                    )}
-                </div>
-             ))}
-              
-
-            </div>
-        </div>
-
-        {/* 2.3 Bottom Input Area (Sticky) */}
-        <div className="p-6 pt-2 bg-app-bg">
-            <div className="max-w-4xl mx-auto bg-[#1a1a1a] border border-gray-700 rounded-xl p-3 flex flex-col gap-2 shadow-lg">
-                <input 
-                type="text" 
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} // Allow Enter to send
-                placeholder={`Message ${selectedModel || '...'}...`}
-                disabled={isLoading}
-                className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
-            />
-            <div className="flex justify-between items-center mt-2 border-t border-gray-800 pt-2">
-                <div className="flex gap-2">
-                     {/* Attach Buttons (Keep existing) */}
-                     <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Attach file">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" >
-                            <path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"></path>
-                        </svg>
-                     </button>
-                     <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition" title="Enhance prompt">✨</button>
-                </div>
-                <button 
-                    onClick={handleSendMessage}
-                    disabled={isLoading}
-                    className={`bg-gray-700 text-white p-2 px-4 rounded hover:bg-gray-600 transition text-xs font-bold ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                    {isLoading ? 'SENDING...' : 'SEND ➤'}
-                </button>
-            </div>
-            </div>
-            <div className="text-center text-[10px] text-gray-600 mt-2 flex justify-between px-2 max-w-4xl mx-auto">
-                 <span>Context: 1,248 / 8192</span>
-                 <span>Onys AI v0.1</span>
-            </div>
-        </div>
+                
+        {/* 2.2 MAIN CHAT AREA (Component) */}
+        {/* We use the ChatArea component here to handle messages, input, and timeline */}
+        <ChatArea 
+          chatHistory={chatHistory} 
+          setChatHistory={setChatHistory}
+          selectedProviderId={selectedProviderId}
+          selectedModel={selectedModel}
+          chatId={chatId}
+        />
 
       </div>
 
@@ -272,16 +191,9 @@ export default function MainLayout() {
         </div>
       </div>
 
-      {/* Settings Modal (Overlay) */}
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
-      />
-      <InstructionModal 
-        isOpen={isInstructionsOpen} 
-        onClose={() => setIsInstructionsOpen(false)}
-        chatId={chatId}
-     />
+      {/* Modals */}
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <InstructionModal isOpen={isInstructionsOpen} onClose={() => setIsInstructionsOpen(false)} chatId={chatId} />
     </div>
   );
 }
