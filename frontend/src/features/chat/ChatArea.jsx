@@ -151,7 +151,8 @@ export default function ChatArea({
             />
          )}
          </div>
-      </div>
+      </div> 
+      {/* End of Main Scrollable Chat */}
 
       {/* RIGHT: TIMELINE NAVIGATION (Sticky) */}
       <div className="w-12 border-l border-gray-800 bg-app-bg flex flex-col items-center py-6 gap-3 overflow-y-auto no-scrollbar">
@@ -165,13 +166,15 @@ export default function ChatArea({
                     onClick={() => scrollToMessage(idx)}
                     // 1. On Hover: Calculate position
                     onMouseEnter={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect(); // Get exact screen coordinates
+                        const rect = e.currentTarget.getBoundingClientRect();
                         setTooltip({
                             show: true,
-                            y: rect.top, // The vertical position of this specific dot
+                            y: rect.top + rect.height / 2, // center vertically
+                            x: rect.left,                  // left edge of the bullet
                             content: msg.content
                         });
                     }}
+
                     // 2. On Leave: Hide
                     onMouseLeave={() => setTooltip({ ...tooltip, show: false })}
                     
@@ -211,18 +214,20 @@ export default function ChatArea({
         </div>
       </div>
           {/* SMART FLOATING TOOLTIP */}
-      {tooltip.show && (
-        <div 
-            className="fixed right-16 z-[9999] max-w-xs bg-[#222] text-xs text-gray-200 px-3 py-2 rounded-md shadow-2xl border border-gray-700 animate-in fade-in zoom-in-95 duration-100 pointer-events-none"
-            style={{ top: tooltip.y - 15 }} // -15 centers it vertically with the dot
-        >
-            {/* Arrow pointing right */}
-            <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-[#222] border-t border-r border-gray-700 rotate-45"></div>
-            
-            {/* Content */}
-            <p className="truncate w-48">{tooltip.content}</p>
-        </div>
-      )}
+            {tooltip.show && (
+            <div
+                className="fixed z-[9999] max-w-xs bg-[#222] text-xs text-gray-200 px-3 py-2 rounded-md shadow-2xl border border-gray-700 animate-in fade-in zoom-in-95 duration-100 pointer-events-none"
+                style={{
+                    top: tooltip.y - 15,         // adjust vertically
+                    left: tooltip.x - 210        // 200px width + 10px spacing
+                }}
+            >
+                {/* Arrow pointing right to the bullet */}
+                <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-[#222] border-t border-r border-gray-700 rotate-45"></div>
+                <p className="truncate w-48">{tooltip.content}</p>
+            </div>
+        )}
+
     </div>
   );
 }
