@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
+import ChatLoadingBubble from './ChatLoadingBubble';
 
 export default function ChatArea({ 
   chatHistory, 
@@ -92,6 +93,12 @@ export default function ChatArea({
                     )}
                 </div>
              ))}
+             {isLoading && (
+            <ChatLoadingBubble 
+                provider={selectedProviderId} 
+                model={selectedModel} 
+            />
+         )}
          </div>
       </div>
 

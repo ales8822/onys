@@ -1,320 +1,174 @@
-// MarkdownRenderer.jsx
-import React, { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import clsx from "clsx";
-
-// PrismJS & languages
-import Prism from "prismjs";
-import "prismjs/themes/prism-tomorrow.css"; // optional: Prism theme; style via tailwind if you prefer
-// load common languages
-import "prismjs/components/prism-javascript";
-import "prismjs/components/prism-jsx";
-import "prismjs/components/prism-typescript";
-import "prismjs/components/prism-tsx";
-import "prismjs/components/prism-python";
-import "prismjs/components/prism-bash";
-import "prismjs/components/prism-css";
-import "prismjs/components/prism-markup";
-import "prismjs/components/prism-json";
-
-
-const CopyIcon = ({ className }) => (
-  <svg
-    className={className}
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-  </svg>
-);
-
-const CheckIcon = ({ className }) => (
-  <svg
-    className={className}
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="3"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M20 6L9 17l-5-5"></path>
-  </svg>
-);
-
+import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
 /**
- * MarkdownRenderer
- *
- * Props:
- *   - content: string (markdown)
- *   - className?: string (optional wrapper classes)
+ * Internal component to handle Code Block logic (Copy & Expand)
  */
-export default function MarkdownRenderer({ content, className = "" }) {
-  const copyTimeoutRef = useRef(null);
+const CodeBlock = ({ inline, className, children }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const codeString = String(children).replace(/\n$/, "");
+  const hasNewLine = codeString.includes('\n');
+  const isBlock = hasNewLine || (className && className.includes('language-'));
+  const language = className ? className.replace('language-', '') : 'text';
 
+  // Lock body scroll when expanded
   useEffect(() => {
-    // highlight after first render and when content changes
-    Prism.highlightAll();
-    return () => {
-      if (copyTimeoutRef.current) {
-        clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, [content]);
+    if (isExpanded) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [isExpanded]);
 
-  // small helper to copy text and show ephemeral feedback
-  const useCopy = () => {
-    const [copiedId, setCopiedId] = useState(null);
+  // 1. INLINE CODE (Small Pill)
+  if (!isBlock) {
+    return (
+      <code className="bg-[#2a2a2a] px-1.5 py-0.5 rounded text-accent font-mono text-xs border border-gray-700 break-words">
+        {children}
+      </code>
+    );
+  }
 
-    const copy = async (text, id = "global") => {
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopiedId(id);
-        // clear after a short delay
-        if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-        copyTimeoutRef.current = setTimeout(() => setCopiedId(null), 1800);
-      } catch (err) {
-        // Fallback: select + execCommand (older browsers)
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "absolute";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        try {
-          document.execCommand("copy");
-          setCopiedId(id);
-          if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-          copyTimeoutRef.current = setTimeout(() => setCopiedId(null), 1800);
-        } catch {
-          console.error("Copy failed");
-        } finally {
-          ta.remove();
-        }
-      }
-    };
-
-    return { copiedId, copy };
+  // 2. BLOCK CODE
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(codeString);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy!', err);
+    }
   };
 
-  const { copiedId, copy } = useCopy();
-
-  // Code renderer (handles inline and block)
-  function CodeRenderer({ node, inline, className, children, ...props }) {
-    const language = (className || "").replace("language-", "") || "";
-    const codeString = String(children).replace(/\n$/, "");
-
-    if (inline) {
-      // small inline code pill with copy icon
-      const id = `inline-${Math.random().toString(36).slice(2, 9)}`;
-      return (
-        <code className="inline-flex items-center gap-2 bg-[#2a2a2a] px-2 py-[3px] rounded text-xs font-mono border border-gray-700">
-            <span className="select-text">{codeString}</span>
-
-            <button
-            onClick={() => copy(codeString, id)}
-            aria-label="Copy inline code"
-            className="transition transform hover:scale-110 active:scale-95"
-            type="button"
-            >
-            {copiedId === id ? (
-                <CheckIcon className="text-green-400 animate-bounce" />
-            ) : (
-                <CopyIcon className="opacity-70 hover:opacity-100" />
-            )}
-            </button>
-        </code>
-        );
-    }
-
-    // Block code
-    const prismLanguageClass = language ? `language-${language}` : "";
-    const lines = codeString.split(/\r\n|\r|\n/);
-
-    return (
-      <div className="my-4 rounded-lg overflow-hidden bg-[#111213] border border-gray-800 shadow">
-        <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-gray-300 font-mono bg-[#161617] border-b border-gray-800 select-none">
-          <div className="flex items-center gap-3">
-            <span className="px-2 py-0.5 rounded text-[11px] bg-[#1f1f1f] text-gray-200 font-semibold">
-              CODE
-            </span>
-            <span className="opacity-70 uppercase">{language || "text"}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-                onClick={() => copy(codeString, codeString.slice(0, 12))}
-                className="p-1 rounded hover:bg-gray-700/40 transition transform hover:scale-110 active:scale-95"
-                aria-label="Copy code block"
-                type="button"
-                >
-                {copiedId === codeString.slice(0, 12) ? (
-                    <CheckIcon className="text-green-400 animate-bounce" />
-                ) : (
-                    <CopyIcon className="text-gray-300 opacity-70 hover:opacity-100" />
-                )}
-                </button>
-
-          </div>
+  // Helper to render the code content (reused for normal & expanded view)
+  const renderCodeContent = (fullScreen = false) => (
+    <>
+       {/* Header Bar */}
+       <div className={`bg-[#252525] px-4 py-2 text-[10px] text-gray-400 font-mono border-b border-gray-700 flex justify-between items-center select-none ${fullScreen ? 'sticky top-0 z-10' : ''}`}>
+        
+        {/* Left: Lang Label */}
+        <div className="flex items-center gap-3">
+            <span className="font-bold text-gray-500 uppercase">CODE</span>
+            <span className="bg-[#333] px-2 py-0.5 rounded text-gray-300 uppercase">{language}</span>
         </div>
 
-        <pre className={clsx("m-0 p-4 overflow-x-auto text-sm")}>
-          <code className={clsx("language-markup", prismLanguageClass)} {...props}>
-            {codeString}
-          </code>
-        </pre>
+        {/* Right: Controls */}
+        <div className="flex items-center gap-3">
+            
+            {/* COPY BUTTON */}
+            <button 
+                onClick={handleCopy}
+                className="flex items-center gap-1 hover:text-white transition-colors"
+                title="Copy code"
+            >
+                {isCopied ? (
+                    <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-500"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span className="text-green-500 font-bold">Copied</span>
+                    </>
+                ) : (
+                    <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <span className="hidden sm:inline">Copy</span>
+                    </>
+                )}
+            </button>
 
-        {/* Line numbers column (visual only) */}
-        <style jsx>{`
-          /* Prism theme neutralization: keep the prism-tomorrow colors but allow tailwind control */
-          pre code {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono",
-              "Courier New", monospace;
-            line-height: 1.45;
-          }
-        `}</style>
+            {/* EXPAND / CLOSE BUTTON */}
+            <button 
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="flex items-center gap-1 hover:text-white transition-colors"
+                title={fullScreen ? "Close Fullscreen" : "Expand Code"}
+            >
+                {fullScreen ? (
+                    <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        <span className="font-bold text-white">Close</span>
+                    </>
+                ) : (
+                    <>
+                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                         <span className="hidden sm:inline">Expand</span>
+                    </>
+                )}
+            </button>
+        </div>
       </div>
-    );
-  }
 
-  // Blockquote renderer (semantic + accessible)
-  function BlockquoteRenderer({ node, ...props }) {
-    return (
-      <blockquote
-        className="relative my-4 pl-6 pr-4 py-4 border-l-4 border-accent italic text-gray-200 bg-gray-800/30 rounded"
-        {...props}
-      >
-        <span
-          aria-hidden="true"
-          className="absolute -left-3 -top-2 text-3xl text-accent font-serif opacity-95"
-        >
-          “
-        </span>
-        {props.children}
-      </blockquote>
-    );
-  }
-
-  // Table renderers
-  function TableRenderer({ node, ...props }) {
-    return (
-      <div className="overflow-x-auto my-4 rounded-lg border border-gray-700 shadow-sm">
-        <table className="min-w-full text-left text-sm" {...props} />
-      </div>
-    );
-  }
-
-  function TheadRenderer({ node, ...props }) {
-    return (
-      <thead className="bg-[#252525] text-gray-200 uppercase font-semibold text-xs" {...props} />
-    );
-  }
-
-  function TbodyRenderer({ node, ...props }) {
-    return <tbody className="bg-[#111111] divide-y divide-gray-800" {...props} />;
-  }
-
-  function TrRenderer({ node, isHeader, ...props }) {
-    // stripe via :nth-child is not available in inline props, but Tailwind odd: works on children
-    return <tr className="odd:bg-transparent even:bg-gray-900/20" {...props} />;
-  }
-
-  function ThRenderer({ node, ...props }) {
-    return (
-      <th
-        scope="col"
-        className="px-4 py-3 text-left align-top border-b border-gray-700"
-        {...props}
-      />
-    );
-  }
-
-  function TdRenderer({ node, ...props }) {
-    return <td className="px-4 py-3 align-top text-gray-300 border-b border-gray-800" {...props} />;
-  }
-
-  // Links open external targets in new tab (but keep same tab for local anchors)
-  function LinkRenderer({ href = "", children, ...props }) {
-    const isExternal = /^https?:\/\//.test(href);
-    return (
-      <a
-        href={href}
-        {...props}
-        className="text-accent hover:underline"
-        {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      {/* Code Area */}
+      <code 
+        className={`block p-4 font-mono text-gray-200 leading-5 bg-[#1e1e1e] whitespace-pre overflow-x-auto ${fullScreen ? 'text-sm h-full' : 'text-xs'}`}
       >
         {children}
-      </a>
-    );
-  }
-
-  // Headings (small consistent style)
-  const Heading = (Tag, sizeClasses) => ({ node, ...props }) =>
-    React.createElement(
-      Tag,
-      { className: `${sizeClasses} mt-4 mb-2 text-white font-bold` },
-      props.children
-    );
-
-  // Markup components mapping
-  const components = {
-    // typography
-    h1: Heading("h1", "text-2xl"),
-    h2: Heading("h2", "text-xl"),
-    h3: Heading("h3", "text-lg"),
-    p: ({ node, ...props }) => <p className="mb-3 last:mb-0 leading-relaxed" {...props} />,
-    strong: ({ node, ...props }) => <strong className="font-semibold text-accent" {...props} />,
-
-    // blockquote
-    blockquote: BlockquoteRenderer,
-
-    // links
-    a: LinkRenderer,
-
-    // lists
-    ul: ({ node, ...props }) => <ul className="list-disc pl-6 mb-3 space-y-1" {...props} />,
-    ol: ({ node, ...props }) => <ol className="list-decimal pl-6 mb-3 space-y-1" {...props} />,
-    li: ({ node, ...props }) => <li className="pl-1" {...props} />,
-
-    // code
-    code: CodeRenderer,
-
-    // tables
-    table: TableRenderer,
-    thead: TheadRenderer,
-    tbody: TbodyRenderer,
-    tr: TrRenderer,
-    th: ThRenderer,
-    td: TdRenderer,
-
-    // images (responsive)
-    img: ({ node, alt, ...props }) => (
-      // eslint-disable-next-line jsx-a11y/alt-text
-      <img
-        alt={alt || ""}
-        decoding="async"
-        className="max-w-full h-auto rounded-md my-3"
-        {...props}
-      />
-    ),
-  };
+      </code>
+    </>
+  );
 
   return (
-    <div className={clsx("markdown-body text-sm text-gray-200", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
+    <>
+      {/* 1. NORMAL VIEW (In Chat) */}
+      <div className="my-4 rounded-lg overflow-hidden bg-[#1e1e1e] border border-gray-700 shadow-md">
+         {renderCodeContent(false)}
+      </div>
+
+      {/* 2. EXPANDED MODAL (Fullscreen Overlay) */}
+      {isExpanded && (
+        <div className="fixed inset-0 z-[99999] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+            {/* Modal Container */}
+            <div className="w-[90vw] h-[85vh] bg-[#1e1e1e] border border-gray-700 rounded-lg shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                     {renderCodeContent(true)}
+                </div>
+            </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default function MarkdownRenderer({ content }) {
+  return (
+    <div className="markdown-body text-sm leading-relaxed text-gray-200">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        components={{
+          code: CodeBlock,
+          // Typography
+          h1: ({node, ...props}) => <h1 className="text-2xl font-bold mt-6 mb-3 text-white border-b border-gray-700 pb-2" {...props} />,
+          h2: ({node, ...props}) => <h2 className="text-xl font-bold mt-5 mb-2 text-white" {...props} />,
+          h3: ({node, ...props}) => <h3 className="text-lg font-bold mt-4 mb-2 text-gray-100" {...props} />,
+          p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
+          strong: ({node, ...props}) => <span className="font-bold text-accent" {...props} />,
+          
+          blockquote: ({node, ...props}) => (
+            <div className="flex gap-3 my-4 bg-gray-800/40 p-3 rounded-r border-l-4 border-accent">
+               <span className="text-2xl text-accent font-serif">“</span>
+               <blockquote className="italic text-gray-300 pt-1" {...props} />
+            </div>
+          ),
+
+          table: ({node, ...props}) => (
+            <div className="overflow-x-auto my-4 rounded-lg border border-gray-700 shadow-sm">
+              <table className="min-w-full text-left text-sm border-collapse" {...props} />
+            </div>
+          ),
+          thead: ({node, ...props}) => <thead className="bg-[#252525] text-gray-200 uppercase font-bold text-xs" {...props} />,
+          tbody: ({node, ...props}) => <tbody className="bg-[#1a1a1a] divide-y divide-gray-800" {...props} />,
+          tr: ({node, ...props}) => <tr className="hover:bg-gray-800/50 transition-colors" {...props} />,
+          th: ({node, ...props}) => <th className="px-4 py-3 border-r border-gray-700 last:border-none" {...props} />,
+          td: ({node, ...props}) => <td className="px-4 py-3 text-gray-300 border-r border-gray-800 last:border-none" {...props} />,
+
+          a: ({node, ...props}) => <a className="text-accent hover:underline cursor-pointer" target="_blank" rel="noopener noreferrer" {...props} />,
+          
+          ul: ({node, ...props}) => <ul className="list-disc pl-6 mb-3 space-y-1 marker:text-gray-500" {...props} />,
+          ol: ({node, ...props}) => <ol className="list-decimal pl-6 mb-3 space-y-1 marker:text-gray-500" {...props} />,
+          li: ({node, ...props}) => <li className="pl-1" {...props} />,
+        }}
+      >
         {content}
       </ReactMarkdown>
     </div>
