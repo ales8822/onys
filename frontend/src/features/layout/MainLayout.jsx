@@ -53,6 +53,16 @@ export default function MainLayout() {
       console.error("Failed to load session", err);
     }
   };
+
+  const handleDeleteSession = (deletedId) => {
+    // If the deleted session is the one currently open, clear the screen
+    if (deletedId === chatId) {
+        handleNewChat();
+    }
+    // Force refresh list (trigger) is handled locally in sidebar, 
+    // but we can increment this to be safe if needed.
+  };
+
   const currentProvider = activeProviders.find(p => p.id === selectedProviderId);
 
   return (
@@ -73,6 +83,7 @@ export default function MainLayout() {
         <SidebarSessionList 
             onSelectSession={handleLoadSession} 
             currentChatId={chatId}
+            onDeleteSession={handleDeleteSession}
             refreshTrigger={chatHistory.length} // Force refresh list when chat changes
         />
             <div className="bg-accent bg-opacity-10 text-accent p-2 rounded cursor-pointer text-sm font-medium">Dashboard</div>

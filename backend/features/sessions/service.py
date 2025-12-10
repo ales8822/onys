@@ -52,3 +52,11 @@ def list_sessions():
     # Sort by modification time (newest first)
     sessions.sort(key=lambda x: os.path.getmtime(os.path.join(SESSIONS_DIR, f"{x['id']}.json")), reverse=True)
     return sessions
+
+
+def delete_session(chat_id: str):
+    file_path = get_session_file(chat_id)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return True
+    return False
