@@ -15,7 +15,7 @@ export default function TimelineSidebar({ chatHistory, scrollToMessage, setToolt
                   onClick={() => scrollToMessage(idx)}
                   onMouseEnter={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect(); 
-                      setTooltip({ show: true, x: rect.left, y: rect.top, content: msg.content });
+                      setTooltip({ show: true, x: rect.left,  y: rect.top + rect.height / 2, content: msg.content });
                   }}
                   onMouseLeave={() => setTooltip({ show: false, x: 0, y: 0, content: "" })}
                   className="group relative flex items-center justify-center cursor-pointer w-full py-1"

@@ -19,7 +19,7 @@ export default function ChatArea({
   const [isLoading, setIsLoading] = useState(false);
   const [attachments, setAttachments] = useState([]); 
   const fileInputRef = useRef(null);
-  const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, content: "" });
+  const [tooltip, setTooltip] = useState({ show: false, y: 0, content: "" });
   const [inputTokens, setInputTokens] = useState(0); 
   const messageRefs = useRef({});
   const scrollContainerRef = useRef(null); 
@@ -184,7 +184,7 @@ export default function ChatArea({
       {tooltip.show && (
         <div 
             className="fixed z-[9999] max-w-xs bg-[#222] text-xs text-gray-200 px-3 py-2 rounded-md shadow-2xl border border-gray-700 animate-in fade-in zoom-in-95 duration-100 pointer-events-none"
-            style={{ top: tooltip.y - 15, left: tooltip.x - 12, transform: 'translateX(-100%)' }}
+            style={{ top: tooltip.y - 15, left: tooltip.x - 210 }}
         >
             <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-[#222] border-t border-r border-gray-700 rotate-45"></div>
             <p className="truncate w-48">{tooltip.content}</p>
