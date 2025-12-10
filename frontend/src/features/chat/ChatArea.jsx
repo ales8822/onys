@@ -1,3 +1,4 @@
+// frontend/src/features/chat/ChatArea.jsx
 import React, { useState, useRef } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 import ChatLoadingBubble from './ChatLoadingBubble';
@@ -56,8 +57,16 @@ export default function ChatArea({
     setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
-  const reuseImage = (imgBase64, imgPreview) => {
-    setAttachments(prev => [...prev, { file: null, preview: imgPreview, base64: imgBase64 }]);
+   const reuseImage = (imgBase64, imgPreview, name, type) => {
+    // Add existing file back to staging
+    setAttachments(prev => [...prev, { 
+        file: null, 
+        name: name || "Reused Image",
+        type: type || "image/png",
+        preview: imgPreview, 
+        base64: imgBase64,
+        fullDataUrl: imgPreview 
+    }]);
   };
 
   const insertTag = (tag) => {
@@ -197,23 +206,32 @@ export default function ChatArea({
                             </div>
                         )}
 
-                        {/* RENDER USER ATTACHMENTS IN HISTORY */}
-                    {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
-                        <div className="flex gap-2 mb-2 justify-end flex-wrap">
-                            {msg.attachments.map((att, i) => (
-                                <div key={i} className="relative group bg-[#222] border border-gray-600 rounded-lg overflow-hidden w-32 h-32 flex items-center justify-center">
-                                    {att.type && att.type.startsWith('image/') ? (
-                                        <img src={att.preview || att.fullDataUrl} alt="att" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="flex flex-col items-center p-2 text-center">
-                                            <span className="text-3xl mb-2">📄</span>
-                                            <span className="text-[10px] text-gray-300 break-all line-clamp-3">{att.name}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                       {/* --- RENDER ATTACHMENTS (WITH REUSE BUTTON) --- */}
+                        {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                            <div className="flex gap-2 mb-2 justify-end flex-wrap">
+                                {msg.attachments.map((att, i) => (
+                                    <div key={i} className="relative group bg-[#222] border border-gray-600 rounded-lg overflow-hidden w-32 h-32 flex items-center justify-center">
+                                        {att.type && att.type.startsWith('image/') ? (
+                                            <img src={att.preview || att.fullDataUrl} alt="att" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="flex flex-col items-center p-2 text-center">
+                                                <span className="text-3xl mb-2">📄</span>
+                                                <span className="text-[10px] text-gray-300 break-all line-clamp-3">{att.name}</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* --- REUSE BUTTON RESTORED --- */}
+                                        <button 
+                                            onClick={() => reuseImage(att.base64, att.preview || att.fullDataUrl, att.name, att.type)}
+                                            className="absolute bottom-2 right-2 bg-black/60 hover:bg-accent text-white p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all z-10"
+                                            title="Use this file again"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         {/* 2. Message Bubble */}
                         <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm shadow-md px-5 py-3' : 'text-gray-300'} text-sm w-full`}>

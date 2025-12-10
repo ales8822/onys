@@ -1,3 +1,4 @@
+// frontend/src/features/files/FileUploadBar.jsx
 import React from 'react';
 
 export default function FileUploadBar({ attachments, onRemove, onInsertTag }) {
