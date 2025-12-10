@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 import ChatLoadingBubble from './ChatLoadingBubble';
-import ImageUploadBar from '../files/ImageUploadBar'; // <--- 1. Import
+import FileUploadBar from '../files/FileUploadBar'; // Renamed
 
 export default function ChatArea({ 
   chatHistory, 
@@ -33,10 +33,15 @@ export default function ChatArea({
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => {
+          // Get clean base64 (remove data:application/pdf;base64, prefix)
+          const base64String = reader.result.split(',')[1];
           resolve({
-            file,
-            preview: URL.createObjectURL(file),
-            base64: reader.result
+            file, // Raw file object
+            name: file.name,
+            type: file.type,
+            preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+            base64: base64String, // Clean base64 for backend
+            fullDataUrl: reader.result // For reusing images locally
           });
         };
         reader.readAsDataURL(file);
@@ -44,7 +49,7 @@ export default function ChatArea({
     }));
 
     setAttachments(prev => [...prev, ...newAttachments]);
-    e.target.value = null; // Reset input
+    e.target.value = null;
   };
 
   const removeAttachment = (index) => {
@@ -67,26 +72,28 @@ export default function ChatArea({
   };
 
   const handleSendMessage = async () => {
-    // Modified check: Allow empty text if we have images
     if ((!inputMessage.trim() && attachments.length === 0) || !selectedProviderId) return;
 
-    // 1. Prepare User Message with Images for UI
+    // 1. Filter types
+    const imagesToSend = attachments.filter(a => a.type.startsWith('image/')).map(a => a.base64);
+    const docsToSend = attachments.filter(a => !a.type.startsWith('image/')).map(a => ({
+        name: a.name,
+        type: a.type,
+        content: a.base64
+    }));
+
+    // 2. Prepare User Message (Local UI History)
     const newMessage = { 
         role: 'user', 
         content: inputMessage, 
         id: Date.now(),
-        attachments: attachments.map(a => ({ preview: a.preview, base64: a.base64 })) 
+        attachments: attachments // Store all for history display
     };
     
     const updatedHistory = [...chatHistory, newMessage];
-    
     setChatHistory(updatedHistory);
     setInputMessage("");
-    
-    // 2. Extract clean base64 for Backend
-    const activeImages = attachments.map(a => a.base64.split(',')[1]); 
-    setAttachments([]); // Clear staging area
-    
+    setAttachments([]); // Clear staging
     setIsLoading(true);
 
     try {
@@ -98,7 +105,8 @@ export default function ChatArea({
           provider_id: selectedProviderId,
           model_id: selectedModel,
           messages: updatedHistory,
-          images: activeImages // <--- Send Images to Backend
+          images: imagesToSend,    // Vision
+          documents: docsToSend    // Text Extraction
         }),
       });
       
@@ -189,24 +197,23 @@ export default function ChatArea({
                             </div>
                         )}
 
-                        {/* --- NEW: RENDER UPLOADED IMAGES IN HISTORY --- */}
-                        {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
-                            <div className="flex gap-2 mb-2 justify-end flex-wrap">
-                                {msg.attachments.map((att, i) => (
-                                    <div key={i} className="relative group">
-                                        <img src={att.preview} alt="attachment" className="w-32 h-32 rounded-lg object-cover border border-gray-600 shadow-md" />
-                                        {/* Reuse Button */}
-                                        <button 
-                                            onClick={() => reuseImage(att.base64, att.preview)}
-                                            className="absolute bottom-2 right-2 bg-black/60 hover:bg-accent text-white p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
-                                            title="Use this image again"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        {/* RENDER USER ATTACHMENTS IN HISTORY */}
+                    {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                        <div className="flex gap-2 mb-2 justify-end flex-wrap">
+                            {msg.attachments.map((att, i) => (
+                                <div key={i} className="relative group bg-[#222] border border-gray-600 rounded-lg overflow-hidden w-32 h-32 flex items-center justify-center">
+                                    {att.type && att.type.startsWith('image/') ? (
+                                        <img src={att.preview || att.fullDataUrl} alt="att" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="flex flex-col items-center p-2 text-center">
+                                            <span className="text-3xl mb-2">📄</span>
+                                            <span className="text-[10px] text-gray-300 break-all line-clamp-3">{att.name}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                         {/* 2. Message Bubble */}
                         <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm shadow-md px-5 py-3' : 'text-gray-300'} text-sm w-full`}>
@@ -269,7 +276,11 @@ export default function ChatArea({
         <div className="max-w-4xl mx-auto bg-[#1a1a1a] border border-gray-700 rounded-xl p-0 flex flex-col gap-0 shadow-2xl overflow-hidden">
             
             {/* --- NEW: Upload Bar --- */}
-            <ImageUploadBar images={attachments} onRemove={removeAttachment} onInsertTag={insertTag} />
+            <FileUploadBar 
+                attachments={attachments} 
+                onRemove={removeAttachment} 
+                onInsertTag={insertTag} 
+            />
 
             <input 
                 type="text" 
@@ -285,7 +296,14 @@ export default function ChatArea({
             <div className="flex justify-between items-center px-3 pb-2 pt-1 border-t border-gray-800/50 bg-[#1a1a1a]">
                 <div className="flex gap-2">
                      {/* Hidden File Input */}
-                     <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileSelect} />
+                    <input 
+                          type="file" 
+                          multiple 
+                          // Remove 'accept' to allow all files, or set specific: ".pdf,.txt,.md,.py,.js,.jpg,.png"
+                          className="hidden" 
+                          ref={fileInputRef} 
+                          onChange={handleFileSelect} 
+                        />
 
                      <button onClick={() => fileInputRef.current?.click()} className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition">📎</button>
                      <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition">✨</button>

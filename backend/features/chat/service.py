@@ -3,6 +3,7 @@ import json
 import os
 from features.instructions.service import get_instruction
 from features.sessions.service import save_session
+from features.files.service import extract_text_from_file
 
 SETTINGS_FILE = "user_settings.json"
 
@@ -96,6 +97,17 @@ async def send_to_anthropic(key: str, model: str, messages: list, images: list =
     async with httpx.AsyncClient() as client:
         return await client.post(url, headers=headers, json=payload, timeout=60.0)
 
+async def send_to_runpod(url: str, model: str, messages: list):
+    """RunPod / Ollama (Original)"""
+    if not url:
+        raise Exception("RunPod/Ollama URL is missing.")
+    clean_url = url.rstrip("/") + "/api/chat"
+    
+    payload = { "model": model, "messages": messages, "stream": False }
+    
+    async with httpx.AsyncClient() as client:
+        return await client.post(clean_url, json=payload, timeout=60.0)
+    
 async def send_to_gemini(key: str, model: str, messages: list, images: list = []):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     
@@ -161,14 +173,35 @@ async def process_chat(request):
     config = get_provider_config(request.provider_id)
     if not config: return "Provider configuration not found."
 
-    # 1. INJECT INSTRUCTIONS
+    # 1. PREPARE & EXTRACT DOCUMENTS
+    # If there are documents, extract text and append to the LAST user message
+    docs_context = ""
+    if request.documents:
+        for doc in request.documents:
+            text_content = extract_text_from_file(doc.name, doc.type, doc.content)
+            docs_context += f"\n\n--- FILE: {doc.name} ---\n{text_content}\n-----------------------\n"
+
+    # 2. INJECT INSTRUCTIONS
     user_instruction = get_instruction(request.chat_id)
     combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{user_instruction if user_instruction else ''}"
 
+    # 3. CONSTRUCT MESSAGES
     final_messages = [m.dict() for m in request.messages]
+    
+    # If we extracted text from docs, append it to the latest user prompt
+    if docs_context and final_messages:
+        last_msg = final_messages[-1]
+        if last_msg['role'] == 'user':
+            # If content is a string, just append
+            if isinstance(last_msg['content'], str):
+                last_msg['content'] += f"\n\n[Attached Documentation]:{docs_context}"
+            # If content is a list (multimodal structure), append a text block
+            elif isinstance(last_msg['content'], list):
+                last_msg['content'].append({"type": "text", "text": f"\n\n[Attached Documentation]:{docs_context}"})
+
     final_messages.insert(0, {"role": "system", "content": combined_system_prompt})
 
-    # 2. PREPARE
+    # 4. PREPARE
     keys = config.get("keys", [])
     key = keys[0] if keys else ""
     url = config.get("url", "")
@@ -208,7 +241,7 @@ async def process_chat(request):
     except Exception as e:
         return f"System Error: {str(e)}"
 
-    # 4. SAVE SESSION
+    # 5. SAVE SESSION
     # Save the text history. We do NOT save the image payload in the text history for token reasons.
     # The Frontend handles the image persistence locally for display.
     new_history = [m.dict() for m in request.messages]
