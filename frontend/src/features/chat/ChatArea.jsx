@@ -1,5 +1,6 @@
 // frontend/src/features/chat/ChatArea.jsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef , useMemo, useEffect} from 'react';
+import { encodingForModel } from "js-tiktoken";
 import MarkdownRenderer from './MarkdownRenderer';
 import ChatLoadingBubble from './ChatLoadingBubble';
 import FileUploadBar from '../files/FileUploadBar'; // Renamed
@@ -21,6 +22,44 @@ export default function ChatArea({
   // State for the "Smart" Tooltip
   const [tooltip, setTooltip] = useState({ show: false, y: 0, content: "" });
   
+  // --- TOKEN COUNTERS ---
+  const [inputTokens, setInputTokens] = useState(0); // Live estimate
+
+  // Calculate Total Session Tokens (Official Data from Backend)
+  const sessionStats = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    chatHistory.forEach(msg => {
+      if (msg.role === 'assistant' && msg.meta) {
+        input += (msg.meta.prompt_tokens || 0);
+        output += (msg.meta.completion_tokens || 0);
+      }
+    });
+    return { input, output, total: input + output };
+  }, [chatHistory]);
+  // ----------------------
+
+  // --- LIVE TOKEN ESTIMATION (DEBOUNCED) ---
+  useEffect(() => {
+    // 1. Define the timer
+    const timer = setTimeout(() => {
+        if (!inputMessage) {
+            setInputTokens(0);
+            return;
+        }
+        try {
+            const enc = encodingForModel("gpt-4o"); 
+            const tokens = enc.encode(inputMessage);
+            setInputTokens(tokens.length);
+        } catch (e) {
+            setInputTokens(Math.ceil(inputMessage.length / 4));
+        }
+    }, 2000); // <--- Wait 500ms (0.5 seconds) of inactivity before calculating
+
+    // 2. Cleanup: If you type again before 500ms, cancel the previous timer
+    return () => clearTimeout(timer);
+  }, [inputMessage]);
+
   // 1. REFS: We store a reference to every message DOM element
   const messageRefs = useRef({});
   const [copiedId, setCopiedId] = useState(null);
@@ -83,7 +122,6 @@ export default function ChatArea({
   const handleSendMessage = async () => {
     if ((!inputMessage.trim() && attachments.length === 0) || !selectedProviderId) return;
 
-    // 1. Filter types
     const imagesToSend = attachments.filter(a => a.type.startsWith('image/')).map(a => a.base64);
     const docsToSend = attachments.filter(a => !a.type.startsWith('image/')).map(a => ({
         name: a.name,
@@ -91,18 +129,19 @@ export default function ChatArea({
         content: a.base64
     }));
 
-    // 2. Prepare User Message (Local UI History)
     const newMessage = { 
         role: 'user', 
         content: inputMessage, 
         id: Date.now(),
-        attachments: attachments // Store all for history display
+        attachments: attachments 
     };
     
     const updatedHistory = [...chatHistory, newMessage];
+    
     setChatHistory(updatedHistory);
     setInputMessage("");
-    setAttachments([]); // Clear staging
+    setAttachments([]); 
+    
     setIsLoading(true);
 
     try {
@@ -114,8 +153,8 @@ export default function ChatArea({
           provider_id: selectedProviderId,
           model_id: selectedModel,
           messages: updatedHistory,
-          images: imagesToSend,    // Vision
-          documents: docsToSend    // Text Extraction
+          images: imagesToSend,
+          documents: docsToSend
         }),
       });
       
@@ -124,8 +163,9 @@ export default function ChatArea({
         role: 'assistant', 
         content: data.content, 
         id: Date.now() + 1,
-        model: selectedModel, // <--- Save the model name
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) // <--- Save time
+        model: selectedModel,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        meta: data.usage // Store usage from backend
       }]);
     } catch (error) {
       console.error("Chat error:", error);
@@ -134,6 +174,7 @@ export default function ChatArea({
       setIsLoading(false);
     }
   };
+
 
   // 2. TIMELINE CLICK HANDLER
   const scrollToMessage = (index) => {
@@ -186,6 +227,12 @@ export default function ChatArea({
                                 <span className="text-[10px] text-gray-600">
                                     {msg.timestamp}
                                 </span>
+                                {/* TOKEN DISPLAY PER MESSAGE (Official) */}
+                                {msg.meta && (
+                                    <span className="text-[10px] text-gray-500 border-l border-gray-700 pl-2 ml-1" title="Input / Output Tokens">
+                                        ⚡ {msg.meta.total_tokens}
+                                    </span>
+                                )}
                                 {/* Copy Icon with Feedback */}
                                 <button 
                                     onClick={() => handleCopyMessage(msg.content, msg.id)}
@@ -334,8 +381,19 @@ export default function ChatArea({
                     {isLoading ? '...' : 'SEND ➤'}
                 </button>
             </div>
-        </div>
-      </div>
+            {/* --- FOOTER STATUS BAR (TOKENS) --- */}
+                <div className="flex justify-between items-center px-4 mt-2 text-[10px] text-gray-500 font-mono">
+                     <div className="flex gap-4">
+                        <span>Draft: <span className="text-gray-300">{inputTokens}</span> tokens</span>
+                        <span>Session Total: <span className="text-gray-300">{sessionStats.total}</span> (In: {sessionStats.input}, Out: {sessionStats.output})</span>
+                     </div>
+                     <span>Onys AI v0.1</span>
+                </div>
+
+            </div>
+         </div>
+      
+     
           {/* SMART FLOATING TOOLTIP */}
             {tooltip.show && (
             <div

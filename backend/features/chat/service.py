@@ -28,67 +28,43 @@ def get_provider_config(provider_id: str):
 
 async def send_to_openai_compatible(key: str, model: str, messages: list, base_url: str, images: list = []):
     headers = { "Authorization": f"Bearer {key}", "Content-Type": "application/json" }
-    
-    # "Flashbulb" Strategy:
+     # "Flashbulb" Strategy:
     # 1. Take history as text-only context.
     final_messages = messages.copy()
-    
     # 2. Attach images ONLY to the last user message
     if images and final_messages:
         last_msg = final_messages.pop()
         content_list = [{"type": "text", "text": last_msg['content']}]
-        
         for img_b64 in images:
-            content_list.append({
-                "type": "image_url",
-                "image_url": { "url": f"data:image/jpeg;base64,{img_b64}" }
-            })
-        
+            content_list.append({ "type": "image_url", "image_url": { "url": f"data:image/jpeg;base64,{img_b64}" } })
         final_messages.append({"role": "user", "content": content_list})
 
     payload = { "model": model, "messages": final_messages }
-
     async with httpx.AsyncClient() as client:
         return await client.post(base_url, headers=headers, json=payload, timeout=60.0)
 
 async def send_to_anthropic(key: str, model: str, messages: list, images: list = []):
     url = "https://api.anthropic.com/v1/messages"
-    headers = {
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
+    headers = { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }
 
     system_prompt = None
     clean_messages = []
-    
     for msg in messages:
         if msg['role'] == 'system':
             if system_prompt: system_prompt += "\n" + msg['content']
             else: system_prompt = msg['content']
         else:
-            # Strip previous image payloads if any, keep text
             if isinstance(msg['content'], list):
-                # If history had images, reduce to text for tokens
                 text_part = next((c['text'] for c in msg['content'] if c['type'] == 'text'), "")
                 clean_messages.append({"role": msg['role'], "content": text_part})
             else:
                 clean_messages.append(msg)
 
-    # Attach images to current turn
     if images and clean_messages:
         last_msg = clean_messages.pop()
         content_list = [{"type": "text", "text": last_msg['content']}]
-        
         for img_b64 in images:
-            content_list.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": img_b64
-                }
-            })
+            content_list.append({ "type": "image", "source": { "type": "base64", "media_type": "image/jpeg", "data": img_b64 } })
         clean_messages.append({"role": "user", "content": content_list})
 
     payload = { "model": model, "messages": clean_messages, "max_tokens": 1024 }
@@ -97,20 +73,8 @@ async def send_to_anthropic(key: str, model: str, messages: list, images: list =
     async with httpx.AsyncClient() as client:
         return await client.post(url, headers=headers, json=payload, timeout=60.0)
 
-async def send_to_runpod(url: str, model: str, messages: list):
-    """RunPod / Ollama (Original)"""
-    if not url:
-        raise Exception("RunPod/Ollama URL is missing.")
-    clean_url = url.rstrip("/") + "/api/chat"
-    
-    payload = { "model": model, "messages": messages, "stream": False }
-    
-    async with httpx.AsyncClient() as client:
-        return await client.post(clean_url, json=payload, timeout=60.0)
-    
 async def send_to_gemini(key: str, model: str, messages: list, images: list = []):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-    
     system_instruction = None
     contents = []
 
@@ -118,27 +82,17 @@ async def send_to_gemini(key: str, model: str, messages: list, images: list = []
         if msg['role'] == 'system':
             system_instruction = { "parts": [{ "text": msg['content'] }] }
             continue
-        
         role = "model" if msg['role'] == "assistant" else "user"
         parts = []
-
-        # Simplify history
         if isinstance(msg['content'], list):
              text_part = next((c['text'] for c in msg['content'] if c['type'] == 'text'), "")
              parts.append({ "text": text_part })
         else:
              parts.append({ "text": msg['content'] })
 
-        # Attach images ONLY if it is the last message
         if i == len(messages) - 1 and images and role == "user":
             for img_b64 in images:
-                parts.append({
-                    "inline_data": {
-                        "mime_type": "image/jpeg",
-                        "data": img_b64
-                    }
-                })
-
+                parts.append({ "inline_data": { "mime_type": "image/jpeg", "data": img_b64 } })
         contents.append({ "role": role, "parts": parts })
 
     payload = { "contents": contents }
@@ -147,33 +101,80 @@ async def send_to_gemini(key: str, model: str, messages: list, images: list = []
     async with httpx.AsyncClient() as client:
         return await client.post(url, json=payload, timeout=60.0)
 
-# --- RECEIVERS (Keep existing) ---
-def parse_openai_response(response) -> str:
-    if response.status_code != 200: return f"Error {response.status_code}: {response.text}"
-    return response.json().get("choices", [{}])[0].get("message", {}).get("content", "No content.")
+async def send_to_runpod(url: str, model: str, messages: list):
+    clean_url = url.rstrip("/") + "/api/chat"
+    payload = { "model": model, "messages": messages, "stream": False }
+    async with httpx.AsyncClient() as client:
+        return await client.post(clean_url, json=payload, timeout=60.0)
+# --- RECEIVERS (UPDATED TO RETURN TUPLE: content, usage) ---
+def parse_openai_response(response):
+    if response.status_code != 200:
+        return f"Error {response.status_code}: {response.text}", {}
+    
+    data = response.json()
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "No content.")
+    
+    # Extract Usage
+    usage = data.get("usage", {})
+    return content, {
+        "prompt_tokens": usage.get("prompt_tokens", 0),
+        "completion_tokens": usage.get("completion_tokens", 0),
+        "total_tokens": usage.get("total_tokens", 0)
+    }
 
-def parse_runpod_response(response) -> str:
-    if response.status_code != 200: return f"Error {response.status_code}: {response.text}"
-    return response.json().get("message", {}).get("content", "No content.")
+def parse_runpod_response(response):
+    if response.status_code != 200:
+        return f"Error {response.status_code}: {response.text}", {}
+    
+    data = response.json()
+    content = data.get("message", {}).get("content", "No content.")
+    
+    # Ollama usage format
+    return content, {
+        "prompt_tokens": data.get("prompt_eval_count", 0),
+        "completion_tokens": data.get("eval_count", 0),
+        "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+    }
 
-def parse_anthropic_response(response) -> str:
-    if response.status_code != 200: return f"Error {response.status_code}: {response.text}"
-    content_blocks = response.json().get("content", [])
-    if content_blocks: return content_blocks[0].get("text", "")
-    return "No content."
+def parse_anthropic_response(response):
+    if response.status_code != 200:
+        return f"Error {response.status_code}: {response.text}", {}
+    
+    data = response.json()
+    content = ""
+    if data.get("content"):
+        content = data["content"][0].get("text", "")
+        
+    usage = data.get("usage", {})
+    return content, {
+        "prompt_tokens": usage.get("input_tokens", 0),
+        "completion_tokens": usage.get("output_tokens", 0),
+        "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+    }
 
-def parse_gemini_response(response) -> str:
-    if response.status_code != 200: return f"Error {response.status_code}: {response.text}"
-    try: return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    except: return "No content."
+def parse_gemini_response(response):
+    if response.status_code != 200:
+        return f"Error {response.status_code}: {response.text}", {}
+    
+    data = response.json()
+    content = "No content."
+    try:
+        content = data["candidates"][0]["content"]["parts"][0]["text"]
+    except:
+        pass
 
-# --- MAIN ORCHESTRATOR ---
+    # Gemini Usage Metadata
+    meta = data.get("usageMetadata", {})
+    return content, {
+        "prompt_tokens": meta.get("promptTokenCount", 0),
+        "completion_tokens": meta.get("candidatesTokenCount", 0),
+        "total_tokens": meta.get("totalTokenCount", 0)
+    }
 
 async def process_chat(request):
     config = get_provider_config(request.provider_id)
     if not config: return "Provider configuration not found."
-
-    # 1. PREPARE & EXTRACT DOCUMENTS
+# 1. PREPARE & EXTRACT DOCUMENTS
     # If there are documents, extract text and append to the LAST user message
     docs_context = ""
     if request.documents:
@@ -185,7 +186,7 @@ async def process_chat(request):
     user_instruction = get_instruction(request.chat_id)
     combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{user_instruction if user_instruction else ''}"
 
-    # 3. CONSTRUCT MESSAGES
+     # 3. CONSTRUCT MESSAGES
     final_messages = [m.dict() for m in request.messages]
     
     # If we extracted text from docs, append it to the latest user prompt
@@ -198,42 +199,38 @@ async def process_chat(request):
             # If content is a list (multimodal structure), append a text block
             elif isinstance(last_msg['content'], list):
                 last_msg['content'].append({"type": "text", "text": f"\n\n[Attached Documentation]:{docs_context}"})
-
     final_messages.insert(0, {"role": "system", "content": combined_system_prompt})
-
     # 4. PREPARE
     keys = config.get("keys", [])
     key = keys[0] if keys else ""
     url = config.get("url", "")
     pid = request.provider_id
     images = request.images if request.images else []
-
-    raw_response = None
+    
     answer_text = ""
+    usage_data = {}
     
     try:
+        raw_resp = None
         if pid == "runpod":
-             # RunPod vision implementation depends on specific model, defaulting to text-only for safety here
-             # unless user specifically configured a LLaVA endpoint
-             # Ideally you'd do: send_to_runpod(..., images)
-             raw_response = await send_to_runpod(url, request.model_id, final_messages)
-             answer_text = parse_runpod_response(raw_response)
+             raw_resp = await send_to_runpod(url, request.model_id, final_messages)
+             answer_text, usage_data = parse_runpod_response(raw_resp)
 
         elif pid == "openai":
-            raw_response = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.openai.com/v1/chat/completions", images)
-            answer_text = parse_openai_response(raw_response)
+            raw_resp = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.openai.com/v1/chat/completions", images)
+            answer_text, usage_data = parse_openai_response(raw_resp)
 
         elif pid == "grok":
-            raw_response = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.x.ai/v1/chat/completions", images)
-            answer_text = parse_openai_response(raw_response)
+            raw_resp = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.x.ai/v1/chat/completions", images)
+            answer_text, usage_data = parse_openai_response(raw_resp)
 
         elif pid == "anthropic":
-            raw_response = await send_to_anthropic(key, request.model_id, final_messages, images)
-            answer_text = parse_anthropic_response(raw_response)
+            raw_resp = await send_to_anthropic(key, request.model_id, final_messages, images)
+            answer_text, usage_data = parse_anthropic_response(raw_resp)
         
         elif pid == "gemini":
-            raw_response = await send_to_gemini(key, request.model_id, final_messages, images)
-            answer_text = parse_gemini_response(raw_response)
+            raw_resp = await send_to_gemini(key, request.model_id, final_messages, images)
+            answer_text, usage_data = parse_gemini_response(raw_resp)
 
         else:
             return f"Provider '{pid}' not implemented."
@@ -241,11 +238,23 @@ async def process_chat(request):
     except Exception as e:
         return f"System Error: {str(e)}"
 
-    # 5. SAVE SESSION
-    # Save the text history. We do NOT save the image payload in the text history for token reasons.
-    # The Frontend handles the image persistence locally for display.
+    # 4. SAVE SESSION WITH METADATA
     new_history = [m.dict() for m in request.messages]
-    new_history.append({"role": "assistant", "content": answer_text})
+    
+    # We save the usage stats INSIDE the assistant message
+    new_history.append({
+        "role": "assistant", 
+        "content": answer_text,
+        "meta": usage_data # <--- Store token counts here
+    })
+    
     save_session(request.chat_id, new_history)
 
-    return answer_text
+    # Return structure matching new ChatResponse model
+    return {
+        "content": answer_text,
+        "role": "assistant",
+        "model": request.model_id,
+        "provider": request.provider_id,
+        "usage": usage_data
+    }

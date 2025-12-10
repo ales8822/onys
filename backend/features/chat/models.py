@@ -1,9 +1,11 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class ChatMessage(BaseModel):
     role: str
     content: str
+    # Flexible field to store metadata like tokens inside history
+    meta: Optional[Dict[str, Any]] = None 
 
 class FileAttachment(BaseModel):
     name: str
@@ -20,6 +22,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     content: str
-    model_used: str
+    model: str
     provider: str
+    usage: Optional[Dict[str, int]] = {} # New: { prompt_tokens, completion_tokens, total }
 
