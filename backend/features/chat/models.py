@@ -10,7 +10,8 @@ class ChatRequest(BaseModel):
     provider_id: str
     model_id: str
     messages: List[ChatMessage]
-
+    images: Optional[List[str]] = [] 
+    
 class ChatResponse(BaseModel):
     content: str
     model_used: str

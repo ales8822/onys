@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 import ChatLoadingBubble from './ChatLoadingBubble';
+import ImageUploadBar from '../files/ImageUploadBar'; // <--- 1. Import
 
 export default function ChatArea({ 
   chatHistory, 
@@ -11,11 +12,53 @@ export default function ChatArea({
 }) {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  // --- IMAGE STATE ---
+  const [attachments, setAttachments] = useState([]); // <--- 2. New State
+  const fileInputRef = useRef(null);                  // <--- 3. New Ref
+
   // State for the "Smart" Tooltip
   const [tooltip, setTooltip] = useState({ show: false, y: 0, content: "" });
+  
   // 1. REFS: We store a reference to every message DOM element
   const messageRefs = useRef({});
   const [copiedId, setCopiedId] = useState(null);
+
+  // --- FILE HANDLERS (New) ---
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    const newAttachments = await Promise.all(files.map(async (file) => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          resolve({
+            file,
+            preview: URL.createObjectURL(file),
+            base64: reader.result
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }));
+
+    setAttachments(prev => [...prev, ...newAttachments]);
+    e.target.value = null; // Reset input
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const reuseImage = (imgBase64, imgPreview) => {
+    setAttachments(prev => [...prev, { file: null, preview: imgPreview, base64: imgBase64 }]);
+  };
+
+  const insertTag = (tag) => {
+    setInputMessage(prev => prev + (prev.endsWith(' ') ? '' : ' ') + tag + ' ');
+  };
+  // ---------------------------
 
   const handleCopyMessage = (content, id) => {
     navigator.clipboard.writeText(content);
@@ -24,13 +67,26 @@ export default function ChatArea({
   };
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || !selectedProviderId) return;
+    // Modified check: Allow empty text if we have images
+    if ((!inputMessage.trim() && attachments.length === 0) || !selectedProviderId) return;
 
-    const newMessage = { role: 'user', content: inputMessage, id: Date.now() }; // Add ID for tracking
+    // 1. Prepare User Message with Images for UI
+    const newMessage = { 
+        role: 'user', 
+        content: inputMessage, 
+        id: Date.now(),
+        attachments: attachments.map(a => ({ preview: a.preview, base64: a.base64 })) 
+    };
+    
     const updatedHistory = [...chatHistory, newMessage];
     
     setChatHistory(updatedHistory);
     setInputMessage("");
+    
+    // 2. Extract clean base64 for Backend
+    const activeImages = attachments.map(a => a.base64.split(',')[1]); 
+    setAttachments([]); // Clear staging area
+    
     setIsLoading(true);
 
     try {
@@ -41,7 +97,8 @@ export default function ChatArea({
           chat_id: chatId,
           provider_id: selectedProviderId,
           model_id: selectedModel,
-          messages: updatedHistory 
+          messages: updatedHistory,
+          images: activeImages // <--- Send Images to Backend
         }),
       });
       
@@ -132,6 +189,25 @@ export default function ChatArea({
                             </div>
                         )}
 
+                        {/* --- NEW: RENDER UPLOADED IMAGES IN HISTORY --- */}
+                        {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                            <div className="flex gap-2 mb-2 justify-end flex-wrap">
+                                {msg.attachments.map((att, i) => (
+                                    <div key={i} className="relative group">
+                                        <img src={att.preview} alt="attachment" className="w-32 h-32 rounded-lg object-cover border border-gray-600 shadow-md" />
+                                        {/* Reuse Button */}
+                                        <button 
+                                            onClick={() => reuseImage(att.base64, att.preview)}
+                                            className="absolute bottom-2 right-2 bg-black/60 hover:bg-accent text-white p-1.5 rounded-full backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-all"
+                                            title="Use this image again"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         {/* 2. Message Bubble */}
                         <div className={`${msg.role === 'user' ? 'bg-accent text-white rounded-2xl rounded-tr-sm shadow-md px-5 py-3' : 'text-gray-300'} text-sm w-full`}>
                              <MarkdownRenderer content={msg.content} />
@@ -188,7 +264,13 @@ export default function ChatArea({
 
       {/* BOTTOM: INPUT AREA (Absolute Positioned) */}
       <div className="absolute bottom-0 left-0 w-[calc(100%-3rem)] bg-gradient-to-t from-app-bg via-app-bg to-transparent pt-10 pb-6 px-6">
-        <div className="max-w-4xl mx-auto bg-[#1a1a1a] border border-gray-700 rounded-xl p-3 flex flex-col gap-2 shadow-2xl">
+        
+        {/* Changed padding from p-3 to p-0 to accommodate the full-width upload bar inside */}
+        <div className="max-w-4xl mx-auto bg-[#1a1a1a] border border-gray-700 rounded-xl p-0 flex flex-col gap-0 shadow-2xl overflow-hidden">
+            
+            {/* --- NEW: Upload Bar --- */}
+            <ImageUploadBar images={attachments} onRemove={removeAttachment} onInsertTag={insertTag} />
+
             <input 
                 type="text" 
                 value={inputMessage}
@@ -196,11 +278,16 @@ export default function ChatArea({
                 onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                 placeholder={`Message ${selectedModel || '...'}...`}
                 disabled={isLoading}
-                className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-2 py-1"
+                className="w-full bg-transparent text-gray-200 placeholder-gray-500 text-sm focus:outline-none px-4 py-3"
             />
-            <div className="flex justify-between items-center mt-2 border-t border-gray-800 pt-2">
+            
+            {/* Modified Footer Bar to add Paperclip logic */}
+            <div className="flex justify-between items-center px-3 pb-2 pt-1 border-t border-gray-800/50 bg-[#1a1a1a]">
                 <div className="flex gap-2">
-                     <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition">📎</button>
+                     {/* Hidden File Input */}
+                     <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileSelect} />
+
+                     <button onClick={() => fileInputRef.current?.click()} className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition">📎</button>
                      <button className="w-9 h-9 flex items-center justify-center hover:bg-gray-800 rounded-md text-gray-400 text-xl transition">✨</button>
                 </div>
                 <button 
