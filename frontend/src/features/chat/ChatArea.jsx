@@ -14,7 +14,10 @@ export default function ChatArea({
   setChatHistory,
   selectedProviderId,
   selectedModel,
-  chatId
+  chatId,
+  activeProviders,
+  setSelectedProviderId,
+  setSelectedModel
 }) {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -231,6 +234,10 @@ export default function ChatArea({
             selectedModel={selectedModel}
             selectedAgent={selectedAgent}
             setSelectedAgent={setSelectedAgent}
+            activeProviders={activeProviders}
+            selectedProviderId={selectedProviderId}
+            setSelectedProviderId={setSelectedProviderId}
+            setSelectedModel={setSelectedModel}
           />
         </div>
       </div>

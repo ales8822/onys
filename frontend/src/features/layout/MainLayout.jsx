@@ -66,8 +66,6 @@ export default function MainLayout() {
     }
   };
 
-  const currentProvider = activeProviders.find(p => p.id === selectedProviderId);
-
   return (
     <div className="flex h-screen w-screen bg-app-bg text-white overflow-hidden font-sans">
 
@@ -111,81 +109,8 @@ export default function MainLayout() {
         </div>
       </div>
 
-      {/* SECTION 2: Center Layout (Header + Content) */}
+      {/* SECTION 2: Center Layout (Content) */}
       <div className="flex-1 flex flex-col min-w-0 bg-app-bg relative">
-
-        {/* 2.1 Top Header Bar (Only show in Chat View) */}
-        {activeView === 'chat' && (
-          <div className="h-16 border-b border-gray-800 flex items-center justify-between px-6 bg-app-bg z-10 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              {/* Agent Avatar & Selector */}
-              <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">MA</div>
-              <button className="flex items-center gap-2 px-3 py-1.5 bg-[#222] hover:bg-[#333] rounded text-xs text-gray-300 border border-gray-700 transition">
-                👥 2 Agents
-              </button>
-
-              {/* DYNAMIC PROVIDER DROPDOWN */}
-              <div className="relative group">
-                <select
-                  value={selectedProviderId}
-                  onChange={(e) => {
-                    setSelectedProviderId(e.target.value);
-                    const newProv = activeProviders.find(p => p.id === e.target.value);
-                    if (newProv) setSelectedModel(newProv.models[0]);
-                  }}
-                  className="appearance-none bg-[#222] hover:bg-[#333] text-gray-300 border border-gray-700 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition min-w-[100px]"
-                >
-                  {activeProviders.length === 0 && <option>No Providers</option>}
-                  {activeProviders.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">▼</div>
-              </div>
-
-              {/* DYNAMIC MODEL DROPDOWN */}
-              {currentProvider && (
-                <div className="relative group">
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="appearance-none bg-[#222] hover:bg-[#333] text-accent border border-accent/20 rounded px-3 py-1.5 pr-8 text-xs cursor-pointer focus:outline-none focus:border-accent transition font-medium min-w-[140px]"
-                  >
-                    {currentProvider.models.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-accent">▼</div>
-                </div>
-              )}
-            </div>
-
-            {/* Right Header Buttons */}
-            <div className="flex items-center gap-3 text-gray-400">
-              <button
-                className="hover:text-white px-3 py-1.5 rounded bg-[#222] text-xs border border-gray-700 transition"
-                title="View Project Notes"
-              >
-                Project Notes: Coffee Campaign
-              </button>
-
-              <button
-                onClick={handleNewChat}
-                className="hover:text-white text-xs bg-red-900/30 text-red-400 border border-red-900/50 px-3 py-1.5 rounded transition flex items-center gap-2"
-              >
-                <span>🗑️</span> New Chat
-              </button>
-
-              <button
-                onClick={() => setIsInstructionsOpen(true)}
-                className="hover:text-white text-xs bg-gray-800 text-gray-300 border border-gray-700 px-3 py-1.5 rounded transition"
-              >
-                📜 Instructions
-              </button>
-
-              <button className="hover:text-white text-xs bg-accent text-white px-3 py-1.5 rounded transition shadow-md hover:shadow-lg">Save</button>
-              <button className="hover:text-white text-xs border border-gray-700 px-3 py-1.5 rounded transition hover:bg-gray-800">Export</button>
-            </div>
-          </div>
-        )}
-
-        {/* 2.2 MAIN CONTENT AREA */}
         {activeView === 'chat' ? (
           <ChatArea
             chatHistory={chatHistory}
@@ -193,11 +118,13 @@ export default function MainLayout() {
             selectedProviderId={selectedProviderId}
             selectedModel={selectedModel}
             chatId={chatId}
+            activeProviders={activeProviders}
+            setSelectedProviderId={setSelectedProviderId}
+            setSelectedModel={setSelectedModel}
           />
         ) : (
           <AgentLibrary onClose={() => setActiveView('chat')} />
         )}
-
       </div>
 
       {/* SECTION 3: Context/Notes (Right) - Only in Chat View */}
