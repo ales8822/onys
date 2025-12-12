@@ -41,6 +41,8 @@ async def send_to_openai_compatible(key: str, model: str, messages: list, base_u
         final_messages.append({"role": "user", "content": content_list})
 
     payload = { "model": model, "messages": final_messages, "stream": stream }
+    if stream:
+        payload["stream_options"] = {"include_usage": True}
     async with httpx.AsyncClient() as client:
         if stream:
             async with client.stream("POST", base_url, headers=headers, json=payload, timeout=60.0) as response:
@@ -305,6 +307,26 @@ async def process_chat(request):
                     if delta:
                         answer_text += delta
                         yield json.dumps({"chunk": delta}) + "\n"
+
+                    # Extract Usage if present
+                    if "usage" in data:
+                        # OpenAI / Grok usage format
+                        u = data["usage"]
+                        usage_data = {
+                            "prompt_tokens": u.get("prompt_tokens", 0),
+                            "completion_tokens": u.get("completion_tokens", 0),
+                            "total_tokens": u.get("total_tokens", 0)
+                        }
+                    
+                    if "usageMetadata" in data:
+                         # Gemini usage format
+                         u = data["usageMetadata"]
+                         usage_data = {
+                            "prompt_tokens": u.get("promptTokenCount", 0),
+                            "completion_tokens": u.get("candidatesTokenCount", 0),
+                            "total_tokens": u.get("totalTokenCount", 0)
+                         }
+
                 except:
                     pass
             elif isinstance(chunk, httpx.Response):
@@ -318,6 +340,10 @@ async def process_chat(request):
         yield json.dumps({"error": f"System Error: {str(e)}"})
         return
 
+    # Send final usage data to frontend
+    if usage_data:
+        yield json.dumps({"usage": usage_data}) + "\n"
+
     # 4. SAVE SESSION WITH METADATA
     new_history = [m.dict() for m in request.messages]
     
@@ -325,7 +351,7 @@ async def process_chat(request):
     new_history.append({
         "role": "assistant", 
         "content": answer_text,
-        "meta": usage_data # Usage data might be missing in stream for now
+        "meta": usage_data 
     })
     
     save_session(request.chat_id, new_history)

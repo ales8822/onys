@@ -160,6 +160,13 @@ export default function ChatArea({
                   : msg
               ));
             }
+            if (data.usage) {
+              setChatHistory(prev => prev.map(msg =>
+                msg.id === assistantMsgId
+                  ? { ...msg, meta: data.usage }
+                  : msg
+              ));
+            }
             if (data.error) {
               console.error("Stream error:", data.error);
               setChatHistory(prev => prev.map(msg =>
