@@ -7,23 +7,27 @@ import { encodingForModel } from "js-tiktoken";
 import MessageList from './components/MessageList';
 import TimelineSidebar from './components/TimelineSidebar';
 import InputArea from './components/InputArea';
+import AgentSwitcher from './AgentSwitcher';
 
-export default function ChatArea({ 
-  chatHistory, 
-  setChatHistory, 
-  selectedProviderId, 
-  selectedModel, 
-  chatId 
+export default function ChatArea({
+  chatHistory,
+  setChatHistory,
+  selectedProviderId,
+  selectedModel,
+  chatId
 }) {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [attachments, setAttachments] = useState([]); 
+  const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const [tooltip, setTooltip] = useState({ show: false, y: 0, content: "" });
-  const [inputTokens, setInputTokens] = useState(0); 
+  const [inputTokens, setInputTokens] = useState(0);
   const messageRefs = useRef({});
-  const scrollContainerRef = useRef(null); 
-  const endRef = useRef(null); 
+  const scrollContainerRef = useRef(null);
+  const endRef = useRef(null);
+
+  // Agent State
+  const [selectedAgent, setSelectedAgent] = useState(null);
 
   // --- TOKEN LOGIC ---
   const sessionStats = useMemo(() => {
@@ -40,18 +44,18 @@ export default function ChatArea({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-        if (!inputMessage) {
-            setInputTokens(0);
-            return;
-        }
-        try {
-            const enc = encodingForModel("gpt-4o"); 
-            const tokens = enc.encode(inputMessage);
-            setInputTokens(tokens.length);
-        } catch (e) {
-            setInputTokens(Math.ceil(inputMessage.length / 4));
-        }
-    }, 500); 
+      if (!inputMessage) {
+        setInputTokens(0);
+        return;
+      }
+      try {
+        const enc = encodingForModel("gpt-4o");
+        const tokens = enc.encode(inputMessage);
+        setInputTokens(tokens.length);
+      } catch (e) {
+        setInputTokens(Math.ceil(inputMessage.length / 4));
+      }
+    }, 500);
     return () => clearTimeout(timer);
   }, [inputMessage]);
 
@@ -67,7 +71,7 @@ export default function ChatArea({
           resolve({
             file, name: file.name, type: file.type,
             preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-            base64: base64String, fullDataUrl: reader.result 
+            base64: base64String, fullDataUrl: reader.result
           });
         };
         reader.readAsDataURL(file);
@@ -95,27 +99,29 @@ export default function ChatArea({
 
     const imagesToSend = attachments.filter(a => a.type.startsWith('image/')).map(a => a.base64);
     const docsToSend = attachments.filter(a => !a.type.startsWith('image/')).map(a => ({
-        name: a.name, type: a.type, content: a.base64
+      name: a.name, type: a.type, content: a.base64
     }));
 
-    const newMessage = { 
-        role: 'user', content: inputMessage, id: Date.now(),
-        attachments: attachments 
+    const newMessage = {
+      role: 'user', content: inputMessage, id: Date.now(),
+      attachments: attachments,
+      agent: selectedAgent ? { name: selectedAgent.name, avatar: selectedAgent.name.substring(0, 2).toUpperCase() } : null
     };
-    
+
     // Optimistically add user message
     const updatedHistory = [...chatHistory, newMessage];
     setChatHistory(updatedHistory);
     setInputMessage("");
-    setAttachments([]); 
+    setAttachments([]);
     setIsLoading(true);
 
     // Create placeholder for assistant message
     const assistantMsgId = Date.now() + 1;
-    setChatHistory(prev => [...prev, { 
-        role: 'assistant', content: "", id: assistantMsgId,
-        model: selectedModel, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        meta: {} 
+    setChatHistory(prev => [...prev, {
+      role: 'assistant', content: "", id: assistantMsgId,
+      model: selectedModel, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      meta: {},
+      agent: selectedAgent ? { name: selectedAgent.name, avatar: selectedAgent.name.substring(0, 2).toUpperCase() } : null
     }]);
 
     try {
@@ -124,7 +130,8 @@ export default function ChatArea({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId, provider_id: selectedProviderId, model_id: selectedModel,
-          messages: updatedHistory, images: imagesToSend, documents: docsToSend
+          messages: updatedHistory, images: imagesToSend, documents: docsToSend,
+          agent_id: selectedAgent ? selectedAgent.id : null
         }),
       });
 
@@ -137,36 +144,36 @@ export default function ChatArea({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep the last partial line
 
         for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-                const data = JSON.parse(line);
-                if (data.chunk) {
-                    setChatHistory(prev => prev.map(msg => 
-                        msg.id === assistantMsgId 
-                        ? { ...msg, content: msg.content + data.chunk }
-                        : msg
-                    ));
-                }
-                if (data.error) {
-                     console.error("Stream error:", data.error);
-                     setChatHistory(prev => prev.map(msg => 
-                        msg.id === assistantMsgId 
-                        ? { ...msg, content: msg.content + "\n[Error: " + data.error + "]" }
-                        : msg
-                    ));
-                }
-            } catch (e) {
-                console.error("Parse error", e);
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.chunk) {
+              setChatHistory(prev => prev.map(msg =>
+                msg.id === assistantMsgId
+                  ? { ...msg, content: msg.content + data.chunk }
+                  : msg
+              ));
             }
+            if (data.error) {
+              console.error("Stream error:", data.error);
+              setChatHistory(prev => prev.map(msg =>
+                msg.id === assistantMsgId
+                  ? { ...msg, content: msg.content + "\n[Error: " + data.error + "]" }
+                  : msg
+              ));
+            }
+          } catch (e) {
+            console.error("Parse error", e);
+          }
         }
       }
-      
+
     } catch (error) {
       console.error("Chat error:", error);
       alert("Failed to send message");
@@ -185,22 +192,24 @@ export default function ChatArea({
   // --- RENDER ---
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar bg-app-bg flex relative">
-      
+
       {/* LEFT COLUMN */}
       <div className="flex-1 flex flex-col min-h-full relative">
-         {/* Messages */}
-         <MessageList 
-            chatHistory={chatHistory} 
-            messageRefs={messageRefs}
-            reuseImage={reuseImage}
-            isLoading={isLoading}
-            selectedProviderId={selectedProviderId}
-            selectedModel={selectedModel}
-            endRef={endRef}
-         />
+        {/* Messages */}
+        <MessageList
+          chatHistory={chatHistory}
+          messageRefs={messageRefs}
+          reuseImage={reuseImage}
+          isLoading={isLoading}
+          selectedProviderId={selectedProviderId}
+          selectedModel={selectedModel}
+          endRef={endRef}
+        />
 
-         {/* Sticky Input */}
-         <InputArea 
+        {/* Sticky Input Area Container */}
+        <div className="sticky bottom-0 bg-app-bg p-4 border-t border-gray-800 z-20">
+          {/* Input Component */}
+          <InputArea
             inputMessage={inputMessage}
             setInputMessage={setInputMessage}
             handleSendMessage={handleSendMessage}
@@ -213,24 +222,27 @@ export default function ChatArea({
             inputTokens={inputTokens}
             sessionStats={sessionStats}
             selectedModel={selectedModel}
-         />
+            selectedAgent={selectedAgent}
+            setSelectedAgent={setSelectedAgent}
+          />
+        </div>
       </div>
 
       {/* RIGHT COLUMN: Timeline */}
-      <TimelineSidebar 
-        chatHistory={chatHistory} 
-        scrollToMessage={scrollToMessage} 
-        setTooltip={setTooltip} 
+      <TimelineSidebar
+        chatHistory={chatHistory}
+        scrollToMessage={scrollToMessage}
+        setTooltip={setTooltip}
       />
 
       {/* Floating Tooltip */}
       {tooltip.show && (
-        <div 
-            className="fixed z-[9999] max-w-xs bg-[#222] text-xs text-gray-200 px-3 py-2 rounded-md shadow-2xl border border-gray-700 animate-in fade-in zoom-in-95 duration-100 pointer-events-none"
-            style={{ top: tooltip.y - 15, left: tooltip.x - 210 }}
+        <div
+          className="fixed z-[9999] max-w-xs bg-[#222] text-xs text-gray-200 px-3 py-2 rounded-md shadow-2xl border border-gray-700 animate-in fade-in zoom-in-95 duration-100 pointer-events-none"
+          style={{ top: tooltip.y - 15, left: tooltip.x - 210 }}
         >
-            <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-[#222] border-t border-r border-gray-700 rotate-45"></div>
-            <p className="truncate w-48">{tooltip.content}</p>
+          <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-[#222] border-t border-r border-gray-700 rotate-45"></div>
+          <p className="truncate w-48">{tooltip.content}</p>
         </div>
       )}
 

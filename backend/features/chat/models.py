@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     images: Optional[List[str]] = [] 
     documents: Optional[List[FileAttachment]] = []
+    agent_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     content: str

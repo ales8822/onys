@@ -4,6 +4,7 @@ import os
 from features.instructions.service import get_instruction
 from features.sessions.service import save_session
 from features.files.service import extract_text_from_file
+from features.agents.service import get_agent
 
 SETTINGS_FILE = "user_settings.json"
 
@@ -211,7 +212,27 @@ async def process_chat(request):
 
     # 2. INJECT INSTRUCTIONS
     user_instruction = get_instruction(request.chat_id)
-    combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{user_instruction if user_instruction else ''}"
+    
+    # AGENT INJECTION
+    agent_instruction = ""
+    if request.agent_id:
+        agent = get_agent(request.agent_id)
+        if agent:
+            agent_instruction = f"""
+            YOU ARE AN AI AGENT WITH THE FOLLOWING PROFILE:
+            NAME: {agent.name}
+            ROLE: {agent.role}
+            PERSONALITY: {agent.personality}
+            EXPERTISE: {agent.expertise}
+            
+            YOUR INSTRUCTIONS:
+            {agent.instructions}
+            
+            YOUR KNOWLEDGE BASE:
+            {agent.knowledge}
+            """
+
+    combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{agent_instruction}\n\n{user_instruction if user_instruction else ''}"
 
      # 3. CONSTRUCT MESSAGES
     final_messages = [m.dict() for m in request.messages]
