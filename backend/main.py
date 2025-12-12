@@ -6,6 +6,7 @@ from features.providers.router import router as providers_router
 from features.chat.router import router as chat_router
 from features.instructions.router import router as instructions_router
 from features.sessions.router import router as sessions_router
+from features.agents.router import router as agents_router
 
 app = FastAPI()
 
@@ -24,6 +25,7 @@ app.include_router(providers_router, prefix="/api/providers", tags=["Providers"]
 app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(instructions_router, prefix="/api/instructions", tags=["Instructions"])
 app.include_router(sessions_router, prefix="/api/sessions", tags=["Sessions"])
+app.include_router(agents_router, prefix="/api/agents", tags=["Agents"])
 
 if __name__ == "__main__":
     import uvicorn
