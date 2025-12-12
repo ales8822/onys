@@ -103,11 +103,20 @@ export default function ChatArea({
         attachments: attachments 
     };
     
+    // Optimistically add user message
     const updatedHistory = [...chatHistory, newMessage];
     setChatHistory(updatedHistory);
     setInputMessage("");
     setAttachments([]); 
     setIsLoading(true);
+
+    // Create placeholder for assistant message
+    const assistantMsgId = Date.now() + 1;
+    setChatHistory(prev => [...prev, { 
+        role: 'assistant', content: "", id: assistantMsgId,
+        model: selectedModel, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        meta: {} 
+    }]);
 
     try {
       const res = await fetch('http://localhost:8004/api/chat/send', {
@@ -118,12 +127,46 @@ export default function ChatArea({
           messages: updatedHistory, images: imagesToSend, documents: docsToSend
         }),
       });
-      const data = await res.json();
-      setChatHistory(prev => [...prev, { 
-        role: 'assistant', content: data.content, id: Date.now() + 1,
-        model: selectedModel, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        meta: data.usage 
-      }]);
+
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep the last partial line
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+                const data = JSON.parse(line);
+                if (data.chunk) {
+                    setChatHistory(prev => prev.map(msg => 
+                        msg.id === assistantMsgId 
+                        ? { ...msg, content: msg.content + data.chunk }
+                        : msg
+                    ));
+                }
+                if (data.error) {
+                     console.error("Stream error:", data.error);
+                     setChatHistory(prev => prev.map(msg => 
+                        msg.id === assistantMsgId 
+                        ? { ...msg, content: msg.content + "\n[Error: " + data.error + "]" }
+                        : msg
+                    ));
+                }
+            } catch (e) {
+                console.error("Parse error", e);
+            }
+        }
+      }
+      
     } catch (error) {
       console.error("Chat error:", error);
       alert("Failed to send message");

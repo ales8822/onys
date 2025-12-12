@@ -26,7 +26,7 @@ def get_provider_config(provider_id: str):
 
 # --- MULTIMODAL SENDERS ---
 
-async def send_to_openai_compatible(key: str, model: str, messages: list, base_url: str, images: list = []):
+async def send_to_openai_compatible(key: str, model: str, messages: list, base_url: str, images: list = [], stream: bool = False):
     headers = { "Authorization": f"Bearer {key}", "Content-Type": "application/json" }
      # "Flashbulb" Strategy:
     # 1. Take history as text-only context.
@@ -39,9 +39,15 @@ async def send_to_openai_compatible(key: str, model: str, messages: list, base_u
             content_list.append({ "type": "image_url", "image_url": { "url": f"data:image/jpeg;base64,{img_b64}" } })
         final_messages.append({"role": "user", "content": content_list})
 
-    payload = { "model": model, "messages": final_messages }
+    payload = { "model": model, "messages": final_messages, "stream": stream }
     async with httpx.AsyncClient() as client:
-        return await client.post(base_url, headers=headers, json=payload, timeout=60.0)
+        if stream:
+            async with client.stream("POST", base_url, headers=headers, json=payload, timeout=60.0) as response:
+                async for chunk in response.aiter_lines():
+                    if chunk:
+                        yield chunk
+        else:
+            yield await client.post(base_url, headers=headers, json=payload, timeout=60.0)
 
 async def send_to_anthropic(key: str, model: str, messages: list, images: list = []):
     url = "https://api.anthropic.com/v1/messages"
@@ -73,8 +79,13 @@ async def send_to_anthropic(key: str, model: str, messages: list, images: list =
     async with httpx.AsyncClient() as client:
         return await client.post(url, headers=headers, json=payload, timeout=60.0)
 
-async def send_to_gemini(key: str, model: str, messages: list, images: list = []):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+async def send_to_gemini(key: str, model: str, messages: list, images: list = [], stream: bool = False):
+    # Use streamGenerateContent for streaming, generateContent for non-streaming
+    method = "streamGenerateContent" if stream else "generateContent"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:{method}?key={key}"
+    if stream:
+        url += "&alt=sse" # Request Server-Sent Events
+
     system_instruction = None
     contents = []
 
@@ -99,13 +110,26 @@ async def send_to_gemini(key: str, model: str, messages: list, images: list = []
     if system_instruction: payload["systemInstruction"] = system_instruction
 
     async with httpx.AsyncClient() as client:
-        return await client.post(url, json=payload, timeout=60.0)
+        if stream:
+            async with client.stream("POST", url, json=payload, timeout=60.0) as response:
+                 async for chunk in response.aiter_lines():
+                    if chunk:
+                        yield chunk
+        else:
+            yield await client.post(url, json=payload, timeout=60.0)
 
-async def send_to_runpod(url: str, model: str, messages: list):
+async def send_to_runpod(url: str, model: str, messages: list, stream: bool = False):
     clean_url = url.rstrip("/") + "/api/chat"
-    payload = { "model": model, "messages": messages, "stream": False }
+    payload = { "model": model, "messages": messages, "stream": stream }
     async with httpx.AsyncClient() as client:
-        return await client.post(clean_url, json=payload, timeout=60.0)
+        if stream:
+            async with client.stream("POST", clean_url, json=payload, timeout=60.0) as response:
+                async for chunk in response.aiter_lines():
+                    if chunk:
+                        yield chunk
+        else:
+            yield await client.post(clean_url, json=payload, timeout=60.0)
+
 # --- RECEIVERS (UPDATED TO RETURN TUPLE: content, usage) ---
 def parse_openai_response(response):
     if response.status_code != 200:
@@ -173,7 +197,10 @@ def parse_gemini_response(response):
 
 async def process_chat(request):
     config = get_provider_config(request.provider_id)
-    if not config: return "Provider configuration not found."
+    if not config: 
+        yield json.dumps({"error": "Provider configuration not found."})
+        return
+
 # 1. PREPARE & EXTRACT DOCUMENTS
     # If there are documents, extract text and append to the LAST user message
     docs_context = ""
@@ -211,32 +238,64 @@ async def process_chat(request):
     usage_data = {}
     
     try:
-        raw_resp = None
+        stream_generator = None
         if pid == "runpod":
-             raw_resp = await send_to_runpod(url, request.model_id, final_messages)
-             answer_text, usage_data = parse_runpod_response(raw_resp)
+             stream_generator = send_to_runpod(url, request.model_id, final_messages, stream=True)
 
         elif pid == "openai":
-            raw_resp = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.openai.com/v1/chat/completions", images)
-            answer_text, usage_data = parse_openai_response(raw_resp)
+            stream_generator = send_to_openai_compatible(key, request.model_id, final_messages, "https://api.openai.com/v1/chat/completions", images, stream=True)
 
         elif pid == "grok":
-            raw_resp = await send_to_openai_compatible(key, request.model_id, final_messages, "https://api.x.ai/v1/chat/completions", images)
-            answer_text, usage_data = parse_openai_response(raw_resp)
+            stream_generator = send_to_openai_compatible(key, request.model_id, final_messages, "https://api.x.ai/v1/chat/completions", images, stream=True)
 
-        elif pid == "anthropic":
-            raw_resp = await send_to_anthropic(key, request.model_id, final_messages, images)
-            answer_text, usage_data = parse_anthropic_response(raw_resp)
-        
         elif pid == "gemini":
-            raw_resp = await send_to_gemini(key, request.model_id, final_messages, images)
-            answer_text, usage_data = parse_gemini_response(raw_resp)
+            stream_generator = send_to_gemini(key, request.model_id, final_messages, images, stream=True)
 
         else:
-            return f"Provider '{pid}' not implemented."
+            # Fallback for non-streaming providers or unimplemented ones
+            # For now we just return error for unimplemented streaming
+            yield json.dumps({"error": f"Provider '{pid}' streaming not implemented yet."})
+            return
+
+        async for chunk in stream_generator:
+            # Parse chunk based on provider (OpenAI/Ollama format is usually "data: { ... }")
+            if isinstance(chunk, str) and chunk.startswith("data: "):
+                if "[DONE]" in chunk:
+                    break
+                try:
+                    data = json.loads(chunk[6:])
+                    delta = ""
+                    
+                    # OpenAI / Grok
+                    if "choices" in data:
+                        delta = data["choices"][0]["delta"].get("content", "")
+                    
+                    # Ollama / RunPod
+                    elif "message" in data:
+                         delta = data["message"].get("content", "")
+                    
+                    # Gemini (SSE format)
+                    # data: {"candidates": [{"content": {"parts": [{"text": "..."}]}}]}
+                    elif "candidates" in data:
+                        parts = data["candidates"][0].get("content", {}).get("parts", [])
+                        if parts:
+                            delta = parts[0].get("text", "")
+                    
+                    if delta:
+                        answer_text += delta
+                        yield json.dumps({"chunk": delta}) + "\n"
+                except:
+                    pass
+            elif isinstance(chunk, httpx.Response):
+                 # Fallback if we accidentally got a full response
+                 pass
+            elif isinstance(chunk, str):
+                 # Sometimes we might get raw bytes decoded
+                 pass
 
     except Exception as e:
-        return f"System Error: {str(e)}"
+        yield json.dumps({"error": f"System Error: {str(e)}"})
+        return
 
     # 4. SAVE SESSION WITH METADATA
     new_history = [m.dict() for m in request.messages]
@@ -245,16 +304,7 @@ async def process_chat(request):
     new_history.append({
         "role": "assistant", 
         "content": answer_text,
-        "meta": usage_data # <--- Store token counts here
+        "meta": usage_data # Usage data might be missing in stream for now
     })
     
     save_session(request.chat_id, new_history)
-
-    # Return structure matching new ChatResponse model
-    return {
-        "content": answer_text,
-        "role": "assistant",
-        "model": request.model_id,
-        "provider": request.provider_id,
-        "usage": usage_data
-    }
