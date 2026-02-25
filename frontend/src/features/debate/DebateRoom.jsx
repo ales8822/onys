@@ -14,6 +14,8 @@ export default function DebateRoom({ activeProviders, onClose }) {
     const endRef = useRef(null);
     const stopRef = useRef(false);
     const abortControllerRef = useRef(null);
+    const scrollContainerRef = useRef(null);
+    const [isAtBottom, setIsAtBottom] = useState(true);
 
     const startNewDebate = () => {
         setChatId("debate-" + Math.random().toString(36).substr(2, 9));
@@ -51,10 +53,19 @@ export default function DebateRoom({ activeProviders, onClose }) {
     }, [agent2, activeProviders]);
 
     useEffect(() => {
-        if (endRef.current) {
+        if (endRef.current && isAtBottom) {
             endRef.current.scrollIntoView({ behavior: 'smooth' });
         }
-    }, [chatHistory]);
+    }, [chatHistory, isAtBottom]);
+
+    const handleScroll = () => {
+        if (scrollContainerRef.current) {
+            const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+            // A threshold of 50px helps feel more natural
+            const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+            setIsAtBottom(atBottom);
+        }
+    };
 
     const fetchAgents = async () => {
         try {
@@ -371,7 +382,11 @@ export default function DebateRoom({ activeProviders, onClose }) {
             ) : (
                 /* Debate View */
                 <div className="flex-1 flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[radial-gradient(circle_at_center,rgba(220,38,38,0.05)_0%,transparent_100%)]">
+                    <div
+                        ref={scrollContainerRef}
+                        onScroll={handleScroll}
+                        className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[radial-gradient(circle_at_center,rgba(220,38,38,0.05)_0%,transparent_100%)]"
+                    >
                         {chatHistory.map((msg, i) => (
                             <div key={i} className={`flex flex-col ${msg.role === 'system' ? 'items-center' : 'items-start'}`}>
                                 {msg.role === 'system' ? (

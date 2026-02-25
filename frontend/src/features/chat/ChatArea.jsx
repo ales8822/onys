@@ -34,6 +34,7 @@ export default function ChatArea({
 
   // Agent State
   const [selectedAgent, setSelectedAgent] = useState(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   // Fetch branch points (to show visual cues)
   useEffect(() => {
@@ -51,6 +52,21 @@ export default function ChatArea({
     };
     fetchBranchPoints();
   }, [chatId, chatHistory.length]);
+
+  // --- SMART SCROLL LOGIC ---
+  useEffect(() => {
+    if (endRef.current && isAtBottom) {
+      endRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory, isAtBottom]);
+
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+      const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+      setIsAtBottom(atBottom);
+    }
+  };
 
   // --- TOKEN LOGIC ---
   const sessionStats = useMemo(() => {
@@ -227,7 +243,7 @@ export default function ChatArea({
 
   const stopGeneration = () => {
     if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
+      abortControllerRef.current.abort();
     }
   };
 
@@ -262,7 +278,11 @@ export default function ChatArea({
 
   // --- RENDER ---
   return (
-    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto custom-scrollbar bg-app-bg flex relative">
+    <div
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto custom-scrollbar bg-app-bg flex relative"
+    >
 
       {/* LEFT COLUMN */}
       <div className="flex-1 flex flex-col min-h-full relative">
