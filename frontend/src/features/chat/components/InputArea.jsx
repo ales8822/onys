@@ -19,7 +19,8 @@ export default function InputArea({
     activeProviders,
     selectedProviderId,
     setSelectedProviderId,
-    setSelectedModel
+    setSelectedModel,
+    stopGeneration
 }) {
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -132,22 +133,30 @@ export default function InputArea({
                         </div>
                     </div>
 
-                    <button
-                        onClick={handleSendMessage}
-                        disabled={isLoading || (!inputMessage.trim() && attachments.length === 0)}
-                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${isLoading || (!inputMessage.trim() && attachments.length === 0)
+                    {isLoading ? (
+                        <button
+                            onClick={stopGeneration}
+                            className="px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/20"
+                        >
+                            <div className="flex gap-1 items-center">
+                                <div className="w-1 h-1 rounded-full bg-white animate-bounce"></div>
+                                <div className="w-1 h-1 rounded-full bg-white animate-bounce [animation-delay:0.2s]"></div>
+                                <div className="w-1 h-1 rounded-full bg-white animate-bounce [animation-delay:0.4s]"></div>
+                            </div>
+                            STOP ⏹
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleSendMessage}
+                            disabled={!inputMessage.trim() && attachments.length === 0}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${(!inputMessage.trim() && attachments.length === 0)
                                 ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
                                 : 'bg-accent hover:bg-accent-hover text-white shadow-lg hover:shadow-accent/20'
-                            }`}
-                    >
-                        {isLoading ? (
-                            <span className="animate-spin">⌛</span>
-                        ) : (
-                            <>
-                                SEND <span className="text-[10px]">▶</span>
-                            </>
-                        )}
-                    </button>
+                                }`}
+                        >
+                            SEND <span className="text-[10px]">▶</span>
+                        </button>
+                    )}
                 </div>
             </div>
 

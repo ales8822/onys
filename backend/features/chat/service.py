@@ -2,7 +2,7 @@ import httpx
 import json
 import os
 from features.instructions.service import get_instruction
-from features.sessions.service import save_session
+from features.sessions.service import save_session, save_session_meta, load_session_meta, get_session_file
 from features.files.service import extract_text_from_file
 from features.agents.service import get_agent
 
@@ -46,6 +46,10 @@ async def send_to_openai_compatible(key: str, model: str, messages: list, base_u
     async with httpx.AsyncClient() as client:
         if stream:
             async with client.stream("POST", base_url, headers=headers, json=payload, timeout=60.0) as response:
+                if response.status_code != 200:
+                    err_body = await response.aread()
+                    yield json.dumps({"error": f"HTTP {response.status_code}: {err_body.decode()}"})
+                    return
                 async for chunk in response.aiter_lines():
                     if chunk:
                         yield chunk
@@ -94,8 +98,13 @@ async def send_to_gemini(key: str, model: str, messages: list, images: list = []
 
     for i, msg in enumerate(messages):
         if msg['role'] == 'system':
-            system_instruction = { "parts": [{ "text": msg['content'] }] }
+            text = msg['content']
+            if system_instruction:
+                system_instruction["parts"][0]["text"] += "\n" + text
+            else:
+                system_instruction = { "parts": [{ "text": text }] }
             continue
+
         role = "model" if msg['role'] == "assistant" else "user"
         parts = []
         if isinstance(msg['content'], list):
@@ -109,12 +118,20 @@ async def send_to_gemini(key: str, model: str, messages: list, images: list = []
                 parts.append({ "inline_data": { "mime_type": "image/jpeg", "data": img_b64 } })
         contents.append({ "role": role, "parts": parts })
 
+    # Gemini requires at least one non-system message in 'contents'
+    if not contents:
+        contents.append({ "role": "user", "parts": [{ "text": "Begin response now." }] })
+
     payload = { "contents": contents }
     if system_instruction: payload["systemInstruction"] = system_instruction
 
     async with httpx.AsyncClient() as client:
         if stream:
             async with client.stream("POST", url, json=payload, timeout=60.0) as response:
+                 if response.status_code != 200:
+                    err_body = await response.aread()
+                    yield json.dumps({"error": f"HTTP {response.status_code}: {err_body.decode()}"})
+                    return
                  async for chunk in response.aiter_lines():
                     if chunk:
                         yield chunk
@@ -127,6 +144,10 @@ async def send_to_runpod(url: str, model: str, messages: list, stream: bool = Fa
     async with httpx.AsyncClient() as client:
         if stream:
             async with client.stream("POST", clean_url, json=payload, timeout=60.0) as response:
+                if response.status_code != 200:
+                    err_body = await response.aread()
+                    yield json.dumps({"error": f"HTTP {response.status_code}: {err_body.decode()}"})
+                    return
                 async for chunk in response.aiter_lines():
                     if chunk:
                         yield chunk
@@ -220,6 +241,14 @@ async def process_chat(request):
     if request.agent_id:
         agent = get_agent(request.agent_id)
         if agent:
+            restrict_block = ""
+            if agent.restrict_knowledge:
+                restrict_block = """
+            CRITICAL RESTRICTION: You must ONLY answer based on the knowledge provided above in YOUR KNOWLEDGE BASE.
+            If the user asks something not covered by your knowledge base, politely respond that you don't have information on that topic.
+            Do NOT use any external or general knowledge beyond what is explicitly provided above.
+            """
+
             agent_instruction = f"""
             YOU ARE AN AI AGENT WITH THE FOLLOWING PROFILE:
             NAME: {agent.name}
@@ -232,12 +261,14 @@ async def process_chat(request):
             
             YOUR KNOWLEDGE BASE:
             {agent.knowledge}
+            {restrict_block}
             """
 
-    combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{agent_instruction}\n\n{user_instruction if user_instruction else ''}"
+    custom_instruction = f"\n\nCURRENT TURN INSTRUCTION: {request.custom_prompt}" if request.custom_prompt else ""
+    combined_system_prompt = f"{FORMATTING_INSTRUCTION}\n\n{agent_instruction}\n\n{user_instruction if user_instruction else ''}{custom_instruction}"
 
      # 3. CONSTRUCT MESSAGES
-    final_messages = [m.dict() for m in request.messages]
+    final_messages = [m.model_dump() for m in request.messages]
     
     # If we extracted text from docs, append it to the latest user prompt
     if docs_context and final_messages:
@@ -281,60 +312,69 @@ async def process_chat(request):
             return
 
         async for chunk in stream_generator:
-            # Parse chunk based on provider (OpenAI/Ollama format is usually "data: { ... }")
-            if isinstance(chunk, str) and chunk.startswith("data: "):
-                if "[DONE]" in chunk:
-                    break
-                try:
-                    data = json.loads(chunk[6:])
-                    delta = ""
-                    
-                    # OpenAI / Grok
-                    if "choices" in data:
-                        delta = data["choices"][0]["delta"].get("content", "")
-                    
-                    # Ollama / RunPod
-                    elif "message" in data:
-                         delta = data["message"].get("content", "")
-                    
-                    # Gemini (SSE format)
-                    # data: {"candidates": [{"content": {"parts": [{"text": "..."}]}}]}
-                    elif "candidates" in data:
-                        parts = data["candidates"][0].get("content", {}).get("parts", [])
-                        if parts:
-                            delta = parts[0].get("text", "")
-                    
-                    if delta:
-                        answer_text += delta
-                        yield json.dumps({"chunk": delta}) + "\n"
+            if not isinstance(chunk, str):
+                continue
+                
+            # Handle both SSE ("data: { ... }") and raw JSON ("{ ... }")
+            clean_chunk = chunk.strip()
+            if clean_chunk.startswith("data: "):
+                clean_chunk = clean_chunk[6:].strip()
+                
+            if not clean_chunk or clean_chunk == "[DONE]":
+                continue
 
-                    # Extract Usage if present
-                    if "usage" in data:
-                        # OpenAI / Grok usage format
-                        u = data["usage"]
+            try:
+                data = json.loads(clean_chunk)
+                
+                # Check for explicit error field in chunk
+                if "error" in data:
+                    err_msg = data["error"]
+                    if isinstance(err_msg, dict):
+                        err_msg = err_msg.get("message", str(err_msg))
+                    yield json.dumps({"error": str(err_msg)}) + "\n"
+                    return
+
+                delta = ""
+                
+                # OpenAI / Grok
+                if "choices" in data:
+                    delta = data["choices"][0]["delta"].get("content", "")
+                
+                # Ollama / RunPod
+                elif "message" in data:
+                        delta = data["message"].get("content", "")
+                
+                # Gemini (SSE format usually handled above, or raw)
+                elif "candidates" in data:
+                    parts = data["candidates"][0].get("content", {}).get("parts", [])
+                    if parts:
+                        delta = parts[0].get("text", "")
+                
+                if delta:
+                    answer_text += delta
+                    yield json.dumps({"chunk": delta}) + "\n"
+
+                # Extract Usage
+                if "usage" in data:
+                    u = data["usage"]
+                    usage_data = {
+                        "prompt_tokens": u.get("prompt_tokens", 0),
+                        "completion_tokens": u.get("completion_tokens", 0),
+                        "total_tokens": u.get("total_tokens", 0)
+                    }
+                
+                if "usageMetadata" in data:
+                        u = data["usageMetadata"]
                         usage_data = {
-                            "prompt_tokens": u.get("prompt_tokens", 0),
-                            "completion_tokens": u.get("completion_tokens", 0),
-                            "total_tokens": u.get("total_tokens", 0)
+                        "prompt_tokens": u.get("promptTokenCount", 0),
+                        "completion_tokens": u.get("candidatesTokenCount", 0),
+                        "total_tokens": u.get("totalTokenCount", 0)
                         }
-                    
-                    if "usageMetadata" in data:
-                         # Gemini usage format
-                         u = data["usageMetadata"]
-                         usage_data = {
-                            "prompt_tokens": u.get("promptTokenCount", 0),
-                            "completion_tokens": u.get("candidatesTokenCount", 0),
-                            "total_tokens": u.get("totalTokenCount", 0)
-                         }
 
-                except:
-                    pass
-            elif isinstance(chunk, httpx.Response):
-                 # Fallback if we accidentally got a full response
-                 pass
-            elif isinstance(chunk, str):
-                 # Sometimes we might get raw bytes decoded
-                 pass
+            except Exception as e:
+                # Log parsing error but don't crash the stream
+                print(f"DEBUG: Failed to parse chunk: {clean_chunk} | Error: {e}")
+                pass
 
     except Exception as e:
         yield json.dumps({"error": f"System Error: {str(e)}"})
@@ -345,13 +385,32 @@ async def process_chat(request):
         yield json.dumps({"usage": usage_data}) + "\n"
 
     # 4. SAVE SESSION WITH METADATA
-    new_history = [m.dict() for m in request.messages]
+    new_history = [m.model_dump() for m in request.messages]
     
     # We save the usage stats INSIDE the assistant message
+    meta_data = usage_data.copy() if usage_data else {}
+    meta_data["model"] = request.model_id
+    meta_data["provider"] = request.provider_id
+    if request.agent_id:
+        meta_data["agent_id"] = request.agent_id
+        agent = get_agent(request.agent_id)
+        if agent:
+            meta_data["agent_name"] = agent.name
+
     new_history.append({
         "role": "assistant", 
         "content": answer_text,
-        "meta": usage_data 
+        "meta": meta_data 
     })
     
     save_session(request.chat_id, new_history)
+
+    # If it's a debate session, save metadata for grouping and titling
+    if request.chat_id.startswith("debate-"):
+        existing_meta = load_session_meta(request.chat_id)
+        existing_meta.update({
+            "is_debate": True,
+            "topic": request.custom_prompt.split('"')[1] if '"' in request.custom_prompt else "Agent Debate",
+            "created_at": existing_meta.get("created_at", os.path.getmtime(get_session_file(request.chat_id)))
+        })
+        save_session_meta(request.chat_id, existing_meta)

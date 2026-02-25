@@ -12,7 +12,9 @@ export default function MessageList({
     isLoading,
     selectedProviderId,
     selectedModel,
-    endRef
+    endRef,
+    onBranch,
+    branchPoints = []
 }) {
     const [copiedId, setCopiedId] = useState(null);
 
@@ -59,10 +61,32 @@ export default function MessageList({
                                     </span>
                                 )}
 
+                                {/* Branch Button */}
+                                <button
+                                    onClick={() => onBranch(idx)}
+                                    className="ml-2 text-gray-600 hover:text-accent transition-colors"
+                                    title="Branch conversation from here"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="6" y1="3" x2="6" y2="15"></line>
+                                        <circle cx="18" cy="6" r="3"></circle>
+                                        <circle cx="6" cy="18" r="3"></circle>
+                                        <path d="M18 9a9 9 0 0 1-9 9"></path>
+                                    </svg>
+                                </button>
+
+                                {/* Branch Point Indicator */}
+                                {branchPoints.includes(idx) && (
+                                    <span className="ml-3 flex items-center gap-1 text-[10px] font-bold text-accent px-1.5 py-0.5 bg-accent/10 border border-accent/20 rounded animate-pulse">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 9a9 9 0 0 1-9 9"></path><circle cx="18" cy="6" r="3"></circle></svg>
+                                        Reality Split
+                                    </span>
+                                )}
+
                                 {/* Copy Button */}
                                 <button
                                     onClick={() => handleCopyMessage(msg.content, msg.id)}
-                                    className={`ml-2 transition-all duration-200 flex items-center gap-1 ${copiedId === msg.id ? 'text-green-400' : 'text-gray-600 hover:text-white'}`}
+                                    className={`ml-1 transition-all duration-200 flex items-center gap-1 ${copiedId === msg.id ? 'text-green-400' : 'text-gray-600 hover:text-white'}`}
                                     title="Copy full response"
                                 >
                                     {copiedId === msg.id ? (

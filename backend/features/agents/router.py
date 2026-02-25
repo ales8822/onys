@@ -1,16 +1,42 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from typing import List
 from .models import Agent, AgentCreate, AgentUpdate
 from .service import (
     create_agent, get_all_agents, get_agent, 
     update_agent, delete_agent, get_all_categories
 )
+import io
+import pypdf
+from PIL import Image
+import pytesseract
 
 router = APIRouter(tags=["agents"])
 
 @router.post("/", response_model=Agent)
 def create_new_agent(agent: AgentCreate):
     return create_agent(agent)
+
+@router.post("/extract-text")
+async def extract_text_from_file(file: UploadFile = File(...)):
+    extracted_text = ""
+    try:
+        content = await file.read()
+        filename = file.filename.lower()
+
+        if filename.endswith(".pdf"):
+            pdf_reader = pypdf.PdfReader(io.BytesIO(content))
+            for page in pdf_reader.pages:
+                extracted_text += page.extract_text() + "\n"
+        elif filename.endswith((".png", ".jpg", ".jpeg", ".tiff", ".bmp")):
+            img = Image.open(io.BytesIO(content))
+            extracted_text = pytesseract.image_to_string(img)
+        else:
+            # Assume text file
+            extracted_text = content.decode("utf-8")
+            
+        return {"filename": file.filename, "text": extracted_text.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
 
 @router.get("/", response_model=List[Agent])
 def list_agents():

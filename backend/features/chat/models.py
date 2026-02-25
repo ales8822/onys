@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     images: Optional[List[str]] = [] 
     documents: Optional[List[FileAttachment]] = []
     agent_id: Optional[str] = None
+    custom_prompt: Optional[str] = None
 
 class ChatResponse(BaseModel):
     content: str

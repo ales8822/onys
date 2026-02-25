@@ -3,14 +3,17 @@ import SettingsModal from '../settings/SettingsModal';
 import InstructionModal from '../instructions/InstructionModal';
 import ChatArea from '../chat/ChatArea';
 import SidebarSessionList from '../sessions/SidebarSessionList';
-import AgentLibrary from '../agents/AgentLibrary'; // Import AgentLibrary
+import AgentLibrary from '../agents/AgentLibrary';
+import TokenDashboard from '../usage/TokenDashboard';
+import RealityTree from '../chat/components/RealityTree';
+import DebateRoom from '../debate/DebateRoom';
 
 export default function MainLayout() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
 
   // View State
-  const [activeView, setActiveView] = useState('chat'); // 'chat' | 'agents'
+  const [activeView, setActiveView] = useState('chat'); // 'chat' | 'agents' | 'dashboard' | 'debate'
 
   // Data State
   const [activeProviders, setActiveProviders] = useState([]);
@@ -71,11 +74,22 @@ export default function MainLayout() {
 
       {/* SECTION 1: Sidebar (Left) */}
       <div className="w-64 bg-sidebar-bg border-r border-gray-800 flex flex-col justify-between flex-shrink-0">
-        <div className="p-6">
+        <div className="p-6 pb-4">
           <h1 className="text-2xl font-bold tracking-wider text-white">
             <span className="text-accent">●</span> Onys
           </h1>
-          <p className="text-xs text-gray-500 mt-1">Workspace AI</p>
+          <p className="text-xs text-gray-500 mt-1 mb-6">Workspace AI</p>
+
+          <button
+            onClick={handleNewChat}
+            className="w-full flex items-center justify-center gap-2 p-2 bg-accent bg-opacity-90 hover:bg-opacity-100 text-white rounded transition-colors text-sm font-medium"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            New Chat
+          </button>
         </div>
 
         {/* Visual Menu Placeholders */}
@@ -87,7 +101,10 @@ export default function MainLayout() {
             onDeleteSession={handleDeleteSession}
             refreshTrigger={chatHistory.length}
           />
-          <div className="bg-accent bg-opacity-10 text-accent p-2 rounded cursor-pointer text-sm font-medium">Dashboard</div>
+          <div
+            onClick={() => setActiveView('dashboard')}
+            className={`p-2 rounded cursor-pointer text-sm transition ${activeView === 'dashboard' ? 'bg-accent bg-opacity-10 text-accent font-medium' : 'text-gray-400 hover:bg-gray-800'}`}
+          >Dashboard</div>
           <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm">Workspaces</div>
           <div
             onClick={() => setActiveView('agents')}
@@ -95,7 +112,13 @@ export default function MainLayout() {
           >
             Agent Library
           </div>
-          <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm">Automation Hub</div>
+          <div 
+            onClick={() => setActiveView('debate')}
+            className={`p-2 rounded cursor-pointer text-sm transition ${activeView === 'debate' ? 'bg-red-900/20 text-red-400 font-medium border-l-2 border-red-600' : 'text-gray-400 hover:bg-gray-800'}`}
+          >
+            War Room (Debate)
+          </div>
+          <div className="text-gray-400 p-2 hover:bg-gray-800 rounded cursor-pointer text-sm font-medium opacity-50">Automation Hub</div>
         </div>
 
         <div className="p-4 border-t border-gray-800">
@@ -121,9 +144,14 @@ export default function MainLayout() {
             activeProviders={activeProviders}
             setSelectedProviderId={setSelectedProviderId}
             setSelectedModel={setSelectedModel}
+            onLoadSession={handleLoadSession}
           />
-        ) : (
+        ) : activeView === 'agents' ? (
           <AgentLibrary onClose={() => setActiveView('chat')} />
+        ) : activeView === 'debate' ? (
+          <DebateRoom activeProviders={activeProviders} onClose={() => setActiveView('chat')} />
+        ) : (
+          <TokenDashboard />
         )}
       </div>
 
@@ -148,16 +176,15 @@ export default function MainLayout() {
               </ul>
             </div>
 
-            <div className="border-t border-gray-800 pt-4">
-              <h4 className="text-white text-sm font-bold mb-2">Next Steps</h4>
-              <p className="text-sm text-gray-400 leading-relaxed">
-                We need to select the top 3 slogans and run a small poll with our target audience.
-              </p>
-            </div>
-
             <div className="mt-4 p-3 bg-accent bg-opacity-10 border border-accent/20 rounded text-xs text-accent font-mono break-all">
               /switch_agent Market Analyst
             </div>
+
+            {/* Branching Reality Tree */}
+            <RealityTree 
+              chatId={chatId} 
+              onSelectSession={handleLoadSession} 
+            />
           </div>
         </div>
       )}

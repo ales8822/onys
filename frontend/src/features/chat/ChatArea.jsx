@@ -17,20 +17,40 @@ export default function ChatArea({
   chatId,
   activeProviders,
   setSelectedProviderId,
-  setSelectedModel
+  setSelectedModel,
+  onLoadSession
 }) {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const abortControllerRef = useRef(null);
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const [tooltip, setTooltip] = useState({ show: false, y: 0, content: "" });
   const [inputTokens, setInputTokens] = useState(0);
+  const [branchPoints, setBranchPoints] = useState([]); // indices that have branches
   const messageRefs = useRef({});
   const scrollContainerRef = useRef(null);
   const endRef = useRef(null);
 
   // Agent State
   const [selectedAgent, setSelectedAgent] = useState(null);
+
+  // Fetch branch points (to show visual cues)
+  useEffect(() => {
+    const fetchBranchPoints = async () => {
+      try {
+        const res = await fetch('http://localhost:8004/api/sessions/');
+        const allSessions = await res.json();
+        const points = allSessions
+          .filter(s => s.meta && s.meta.parent_id === chatId)
+          .map(s => s.meta.branch_at);
+        setBranchPoints([...new Set(points)]); // unique indices
+      } catch (err) {
+        console.error("Failed to fetch branch points", err);
+      }
+    };
+    fetchBranchPoints();
+  }, [chatId, chatHistory.length]);
 
   // --- TOKEN LOGIC ---
   const sessionStats = useMemo(() => {
@@ -111,12 +131,14 @@ export default function ChatArea({
       agent: selectedAgent ? { name: selectedAgent.name, avatar: selectedAgent.name.substring(0, 2).toUpperCase() } : null
     };
 
-    // Optimistically add user message
+    // Add User message optimistically
     const updatedHistory = [...chatHistory, newMessage];
     setChatHistory(updatedHistory);
     setInputMessage("");
     setAttachments([]);
     setIsLoading(true);
+
+    abortControllerRef.current = new AbortController();
 
     // Create placeholder for assistant message
     const assistantMsgId = Date.now() + 1;
@@ -131,6 +153,7 @@ export default function ChatArea({
       const res = await fetch('http://localhost:8004/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           chat_id: chatId, provider_id: selectedProviderId, model_id: selectedModel,
           messages: updatedHistory, images: imagesToSend, documents: docsToSend,
@@ -185,10 +208,48 @@ export default function ChatArea({
       }
 
     } catch (error) {
-      console.error("Chat error:", error);
-      alert("Failed to send message");
+      if (error.name === 'AbortError') {
+        console.log("Generation stopped by user");
+        setChatHistory(prev => prev.map(msg =>
+          msg.id === assistantMsgId
+            ? { ...msg, content: msg.content + "\n\n*[Stopped by user]*" }
+            : msg
+        ));
+      } else {
+        console.error("Chat error:", error);
+        alert("Failed to send message");
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+  };
+
+  const handleBranch = async (messageIndex) => {
+    try {
+      const res = await fetch('http://localhost:8004/api/sessions/branch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parent_id: chatId,
+          message_index: messageIndex
+        }),
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        onLoadSession(data.new_id);
+      } else {
+        alert("Failed to branch session: " + data.message);
+      }
+    } catch (err) {
+      console.error("Branching error:", err);
+      alert("Failed to branch session");
     }
   };
 
@@ -214,6 +275,8 @@ export default function ChatArea({
           selectedProviderId={selectedProviderId}
           selectedModel={selectedModel}
           endRef={endRef}
+          onBranch={handleBranch}
+          branchPoints={branchPoints}
         />
 
         {/* Sticky Input Area Container */}
@@ -238,6 +301,7 @@ export default function ChatArea({
             selectedProviderId={selectedProviderId}
             setSelectedProviderId={setSelectedProviderId}
             setSelectedModel={setSelectedModel}
+            stopGeneration={stopGeneration}
           />
         </div>
       </div>
